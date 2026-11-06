@@ -28,7 +28,7 @@ Open <http://127.0.0.1:8000>. The database is created automatically when the app
 
 The Pages workflow publishes the static website from `frontend/` at the site root and the Hugo documentation from `docs/` under `/docs/`. The public URLs are `https://tomboyloychoy.github.io/csc-640-task-management-app/` and `https://tomboyloychoy.github.io/csc-640-task-management-app/docs/` once Pages is enabled and the deployment workflow completes. The GitHub Pages demo uses browser-local storage because GitHub Pages cannot run FastAPI or SQLite. Use the local instructions above for the Python + SQLite Stage 1 app.
 
-The API reference and local setup instructions are maintained in the Hugo source at `docs/content/`.
+The Hugo site currently provides an HW1 starter outline for a future software-quality learning guide, using Tamana as the project example. Its quality pages contain prompts for criteria, evidence, design decisions, and the proposed Stage 1/Stage 2 comparison; expand these with your own analysis in the appropriate assignment. The API reference and local setup instructions document the current app. Source pages are maintained under `docs/content/`.
 
 ## Project layout
 

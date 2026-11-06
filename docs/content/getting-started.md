@@ -1,6 +1,6 @@
 ---
 title: "Getting started"
-description: "Run the Tamana FastAPI and SQLite app locally."
+description: "Run Tamana and reproduce the current API test results."
 ---
 
 ## Requirements
@@ -30,6 +30,8 @@ python -m pip install -r requirements-dev.txt
 python -m pytest
 ```
 
+The checked-in API tests use a temporary SQLite database, so they do not depend on or modify `data/tamana.db`. To reproduce the current test evidence from the repository root, run `python -m pytest -q`. Read the output as evidence about only the cases exercised—not as proof that all quality criteria are met.
+
 ## GitHub Pages demo
 
-The Pages build hosts the static browser app and this Hugo documentation site. Since Pages cannot run Python or SQLite, demo tasks are stored in browser-local storage and are not sent to the API.
+The Pages build hosts the static browser app and this Hugo learning guide. Since Pages cannot run Python or SQLite, demo tasks are stored in browser-local storage and are not sent to the API. Browser-local behavior is separate from the backend API tests.
