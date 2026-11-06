@@ -1,6 +1,6 @@
 # Tamana
 
-Tamana is a task-management app with a Python + FastAPI + SQLite Stage 1 backend and a static GitHub Pages demo. The local FastAPI backend uses direct, parameterized SQL; GitHub Pages stores its demo tasks in the visitor's browser.
+Tamana is a task-management app with a Python, FastAPI, and SQLite backend and a static GitHub Pages demo. The local API uses direct, parameterized SQL; the Pages demo stores tasks in the visitor's browser.
 
 ## Features
 
@@ -28,7 +28,7 @@ Open <http://127.0.0.1:8000>. The database is created automatically when the app
 
 The Pages workflow publishes the static website from `frontend/` at the site root and the Hugo documentation from `docs/` under `/docs/`. The public URLs are `https://tomboyloychoy.github.io/csc-640-task-management-app/` and `https://tomboyloychoy.github.io/csc-640-task-management-app/docs/` once Pages is enabled and the deployment workflow completes. The GitHub Pages demo uses browser-local storage because GitHub Pages cannot run FastAPI or SQLite. Use the local instructions above for the Python + SQLite Stage 1 app.
 
-The Hugo site currently provides an HW1 starter outline for a future software-quality learning guide, using Tamana as the project example. Its quality pages contain prompts for criteria, evidence, design decisions, and the proposed Stage 1/Stage 2 comparison; expand these with your own analysis in the appropriate assignment. The API reference and local setup instructions document the current app. Source pages are maintained under `docs/content/`.
+The Hugo site provides engineering guidance for defining quality criteria, gathering verification evidence, documenting design decisions, and evaluating the planned evolution from direct SQL to SQLAlchemy and Pydantic. It uses Tamana as a practical example and distinguishes implemented behavior from proposed work. Source pages are maintained under `docs/content/`.
 
 ## Project layout
 

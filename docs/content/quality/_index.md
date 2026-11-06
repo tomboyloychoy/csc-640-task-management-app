@@ -1,26 +1,25 @@
 ---
-title: "Quality guide (starter template)"
-description: "A placeholder for the HW1 software-quality learning guide, using Tamana as a project example."
+title: "Engineering quality"
+description: "Practices for delivering reliable, usable, and maintainable software."
 ---
 
-> **HW1 starter:** This is a structure to develop, not a finished quality report. Replace the prompts with your own interpretation and evidence as the project progresses.
+Software quality is the degree to which a product reliably meets user needs and remains safe to change. It is a team responsibility: requirements, design, implementation, testing, release, and operations all contribute.
 
-## My working view of software quality
+## A practical quality loop
 
-<!-- TODO: Explain what quality software means to you and why a team should care. -->
+1. **Understand the user and risk.** Identify who depends on the behavior and what harm or cost a failure could cause.
+2. **Define acceptance criteria.** State observable outcomes, boundaries, and error behavior before implementation.
+3. **Choose a design that supports the criteria.** Make trade-offs explicit and keep complexity proportional to the product's needs.
+4. **Verify at multiple levels.** Use focused tests, integration checks, code review, and usability evaluation as appropriate to the risk.
+5. **Record evidence and uncertainty.** A passing check supports a specific claim; it does not prove the entire product is defect-free.
+6. **Learn and improve.** Use failures, user feedback, and operational signals to prioritize the next change.
 
-## Use the project as an example
+## Engineering guidance
 
-Use the HW3/HW4 Tamana project to connect quality ideas to real requirements, design decisions, implementation, and test results. Distinguish what the code does from what tests have actually verified.
-
-- [Criteria and project evidence]({{< relref "quality/criteria.md" >}})
-- [Verification results]({{< relref "quality/verification.md" >}})
+- [Quality criteria and product evidence]({{< relref "quality/criteria.md" >}})
+- [Verification results and gaps]({{< relref "quality/verification.md" >}})
 - [Design decisions]({{< relref "quality/design-decisions.md" >}})
-- [Two-stage comparison]({{< relref "quality/stages.md" >}})
+- [Technology evolution: benefits and costs]({{< relref "quality/stages.md" >}})
 - [API reference]({{< relref "api/_index.md" >}})
 
-## Future HW5 material
-
-<!-- TODO: Expand the quality guide with your own analysis, project results, and lessons for future teammates. -->
-
-The HW5 submission is expected to include a Hugo report and a Marp presentation with its source and PDF. When those are prepared, add their public links to the course rubric. They are not deliverables of this HW1 placeholder.
+The examples distinguish implemented behavior, verified behavior, and proposed work. Keep these categories separate when adding features or reporting progress.

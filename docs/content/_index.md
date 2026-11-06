@@ -1,19 +1,19 @@
 ---
-title: "Learn software quality with Tamana"
-description: "A practical guide to quality criteria, evidence, verification, design decisions, and technology trade-offs."
+title: "Engineering quality at Tamana"
+description: "Practical guidance for defining quality, verifying behavior, and making sustainable engineering decisions."
 ---
 
-This site is a learning guide for future team members who are new to building quality software. It uses Tamana—a task-management application—as a concrete case study. Instead of treating quality as a checklist at the end, follow how requirements become testable criteria, design choices, implementation evidence, and verification.
+This guide helps team members build and maintain Tamana as a dependable task-management product. Quality is not a final checklist: it starts with user needs, shapes architecture and implementation, and is verified with evidence throughout development.
 
-## Learn the quality practice
+## Engineering practices
 
-- [Quality criteria]({{< relref "quality/criteria.md" >}}): turn user needs into observable, testable expectations.
-- [Verification and evidence]({{< relref "quality/verification.md" >}}): see what the current tests establish—and what remains unverified.
-- [Design decisions]({{< relref "quality/design-decisions.md" >}}): understand the reasoning and trade-offs behind Stage 1.
-- [Stage comparison]({{< relref "quality/stages.md" >}}): compare direct SQL with the planned SQLAlchemy and Pydantic approach.
+- [Quality criteria]({{< relref "quality/criteria.md" >}}): define measurable expectations for product behavior and quality attributes.
+- [Verification and evidence]({{< relref "quality/verification.md" >}}): understand current test coverage, observed results, and remaining risks.
+- [Design decisions]({{< relref "quality/design-decisions.md" >}}): document rationale, alternatives, consequences, and revisit triggers.
+- [Technology evolution]({{< relref "quality/stages.md" >}}): assess the current direct-SQL baseline and the proposed SQLAlchemy/Pydantic direction.
 
-## Use the product as evidence
+## Product and implementation
 
-Tamana's Stage 1 backend uses Python, FastAPI, and SQLite with direct SQL queries. The [API reference]({{< relref "api/_index.md" >}}) describes its actual routes; [getting started]({{< relref "getting-started.md" >}}) explains how to run the app and reproduce the tests.
+The local backend uses Python, FastAPI, and SQLite with direct SQL. The [API reference]({{< relref "api/_index.md" >}}) describes implemented routes; [getting started]({{< relref "getting-started.md" >}}) explains how to run the product and its tests.
 
-The GitHub Pages version is a static demo that stores tasks in each visitor's browser. It does not connect to the local FastAPI API or share data between visitors. Be clear about which version an observation or test applies to.
+The GitHub Pages version is a static demo that stores tasks in each visitor's browser. It does not connect to the local FastAPI API or share data between visitors. Verification results must identify which version and environment they apply to.
