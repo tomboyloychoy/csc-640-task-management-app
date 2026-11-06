@@ -31,7 +31,12 @@ jobs:
           hugo-version: "0.146.0"
           extended: false
       - name: Build documentation
-        run: hugo --source docs --destination _site/docs --minify
+        working-directory: docs
+        run: hugo --destination ../_site/docs --minify
+      - name: Verify documentation output
+        run: |
+          test -s _site/docs/index.html
+          test -s _site/docs/api/tasks/index.html
       - name: Add app to site root
         run: |
           mkdir -p _site
