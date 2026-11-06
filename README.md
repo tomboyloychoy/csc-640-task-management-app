@@ -26,12 +26,15 @@ Open <http://127.0.0.1:8000>. The database is created automatically when the app
 
 ## GitHub Pages demo
 
-The static website is published from `frontend/` by the Pages workflow. The GitHub Pages demo uses browser-local storage because GitHub Pages cannot run FastAPI or SQLite. Use the local instructions above for the Python + SQLite Stage 1 app.
+The Pages workflow publishes the static website from `frontend/` at the site root and the Hugo documentation from `docs/` under `/docs/`. The public URLs are `https://tomboyloychoy.github.io/csc-640-task-management-app/` and `https://tomboyloychoy.github.io/csc-640-task-management-app/docs/` once Pages is enabled and the deployment workflow completes. The GitHub Pages demo uses browser-local storage because GitHub Pages cannot run FastAPI or SQLite. Use the local instructions above for the Python + SQLite Stage 1 app.
+
+The API reference and local setup instructions are maintained in the Hugo source at `docs/content/`.
 
 ## Project layout
 
 - `app/main.py` — FastAPI routes, validation, and direct SQLite queries
 - `frontend/` — responsive browser interface
+- `docs/` — Hugo project and API documentation
 - `tests/` — API and persistence behavior tests
 
 GitHub Pages can publish static files but cannot run the FastAPI/SQLite backend; deploy the complete app to a Python-capable host to make it available online.

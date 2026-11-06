@@ -1,0 +1,19 @@
+{{ define "main" }}
+  <section class="document">
+    <p class="eyebrow">TAMANA DOCUMENTATION</p>
+    <h1>{{ .Title }}</h1>
+    {{ with .Description }}<p class="lead">{{ . }}</p>{{ end }}
+    {{ with .Content }}<div class="prose">{{ . }}</div>{{ end }}
+    <div class="document-list">
+      {{ range .Pages.ByTitle }}
+        <a class="document-card" href="{{ .RelPermalink }}">
+          <span>
+            <strong>{{ .Title }}</strong>
+            {{ with .Description }}<span>{{ . }}</span>{{ end }}
+          </span>
+          <span class="card-arrow" aria-hidden="true">→</span>
+        </a>
+      {{ end }}
+    </div>
+  </section>
+{{ end }}

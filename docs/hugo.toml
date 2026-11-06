@@ -1,0 +1,8 @@
+baseURL = "https://tomboyloychoy.github.io/csc-640-task-management-app/docs/"
+languageCode = "en-us"
+title = "Tamana Documentation"
+disableKinds = ["taxonomy", "term", "RSS"]
+
+[params]
+description = "Project and API documentation for Tamana."
+appURL = "https://tomboyloychoy.github.io/csc-640-task-management-app/"
