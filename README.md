@@ -38,3 +38,22 @@ The Hugo site provides engineering guidance for defining quality criteria, gathe
 - `tests/` — API and persistence behavior tests
 
 GitHub Pages can publish static files but cannot run the FastAPI/SQLite backend; deploy the complete app to a Python-capable host to make it available online.
+
+## API Work Progress
+
+This plan includes the information about 10 APIs that this application would have. `UserBearer` and `AdminBearer` are the two proposed JWT bearer authorization profiles. Registration and login are public. Admin access would require an admin role.
+
+| # | Method | Path | Endpoint status | Authorization |
+|---|---|---|---|---|
+| 1 | `GET` | `/api/tasks` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
+| 2 | `POST` | `/api/tasks` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
+| 3 | `PUT` | `/api/tasks/{task_id}` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
+| 4 | `DELETE` | `/api/tasks/{task_id}` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
+| 5 | `GET` | `/api/tags` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
+| 6 | `POST` | `/api/auth/register` | TO-BE-IMPLEMENTED | Public |
+| 7 | `POST` | `/api/auth/login` | TO-BE-IMPLEMENTED | Public; returns a `UserBearer` JWT |
+| 8 | `GET` | `/api/users/me` | TO-BE-IMPLEMENTED | `UserBearer` |
+| 9 | `PATCH` | `/api/users/me` | TO-BE-IMPLEMENTED | `UserBearer` |
+| 10 | `GET` | `/api/admin/users` | TO-BE-IMPLEMENTED | `AdminBearer` |
+
+`IMPLEMENTED` describes the existing endpoint functionality only: the current task and tag routes are unauthenticated. Adding JWT authentication, user accounts, and per-user task ownership remains **TO-BE-IMPLEMENTED**. Token lifetime, signing-key configuration, and admin-account provisioning still need design decisions.
