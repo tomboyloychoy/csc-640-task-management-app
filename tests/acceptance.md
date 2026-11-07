@@ -1,130 +1,192 @@
-# Tamana acceptance tests
+---
+marp: true
+theme: default
+paginate: true
+size: 16:9
+title: Tamana API Acceptance Tests
+description: Shared acceptance criteria for all ten planned APIs across Stage 1 and Stage 2.
+---
 
-## Acceptance target
+# Tamana API Acceptance Tests
 
-These are the acceptance tests for all ten APIs in the README plan. Run this same feature contract against Stage 1 and Stage 2: use the same request data, status codes, response content, authorization cases, and test assertions. Only application startup and test-database configuration may differ. The tests are feature acceptance criteria, not a description of current implementation status.
+## One contract for both stages
 
-Stage 1 is the FastAPI + SQLite implementation. Stage 2 is SQLAlchemy/Pydantic implementation. `UserBearer` means a valid user JWT; `AdminBearer` means a valid administrator JWT. Protected routes must be checked with valid, missing, and invalid/expired tokens. Admin routes must additionally reject a valid non-admin user's token.
+- **Stage 1:** FastAPI + SQLite
+- **Stage 2:** SQLAlchemy + Pydantic
+- Run the same feature requests, setup, status/content assertions, and authorization cases against both stages.
+- Only app startup and test-database configuration may differ.
+- This presentation specifies acceptance; it does not describe current implementation status.
 
-## Test setup and execution
+---
 
-Use an isolated, empty database for each run. Seed test accounts through registration, except the administrator account, which must be provisioned by a documented test-only fixture/bootstrap mechanism. Do not rely on production data or `data/tamana.db`. Use unique email addresses or reset the database between runs. Create task records through the API. The same test suite must call each stage's application and assert both HTTP status and JSON/body content; any failed assertion must make the test command exit nonzero.
+## Test rules and assumptions
 
-For reproducable tests, this acceptance contract assumes `email` and `password` for registration/login, `display_name` as an editable profile field, registration returns `201`, login/profile reads/updates return `200`, invalid fields return `422`, duplicate registration returns `409`, invalid credentials or missing/invalid/expired tokens return `401`, and authenticated non-admin access returns `403`. 
+- Use an empty, isolated test database; never use production data or `data/tamana.db`.
+- Register ordinary users through the API. Provision an admin only through a documented test fixture/bootstrap.
+- Use unique emails or reset the database per run. Create tasks through the API.
+- Every test checks HTTP status **and** response body/content. Any failure exits nonzero.
+- `UserBearer` = valid user JWT; `AdminBearer` = valid administrator JWT.
+- Protected routes: test valid, missing, malformed, and expired tokens.
+- Admin routes: also test a valid non-admin token.
 
-Run the same suite against each stage, configured to target that stage's app and fresh test database:
+---
+
+## API-shape assumptions to confirm
+
+The README does not define account fields, profile fields, token lifetime, or admin provisioning. For repeatable acceptance tests, assume:
+
+- Registration/login fields: `email`, `password`; editable profile: `display_name`.
+- Register `201`; login and profile read/update `200`.
+- Invalid input `422`; duplicate registration `409`.
+- Invalid credentials or missing/invalid/expired token `401`.
+- Authenticated non-admin accessing admin route `403`.
+- Errors return JSON with a non-empty `detail`.
+- Successful task/user responses assert required values and exclude passwords/hashes.
+
+---
+
+## Run and compare
 
 ```powershell
 python -m pytest -q tests
 ```
-## Planned API cases
 
-In the tables, each failure row means each listed request is a separate assertion. Error responses must be JSON objects containing a non-empty `detail`. Successful task/user responses must assert the specified fields and values, not only the status.
+- Run the same executable suite against each stage and a fresh test database.
+- Record command, commit/revision, database setup, expected vs. actual status/body, and pass/fail counts.
+- A stage passes only when every required case is implemented and passes.
+- Do not weaken assertions to hide a failure.
+- The current test suite is not yet a complete executable implementation of all cases in this acceptance plan.
 
-### 1. `GET /api/tasks` — `UserBearer`
+---
 
-| Case | Setup and request | Expected |
+## 1 — `GET /api/tasks` · `UserBearer`
+
+| Case | Setup / request | Expected |
 |---|---|---|
-| Success | Register and log in as user A. Create two tasks as A: one active tagged `Research` with title `Finish quality report`, and one completed task. `GET /api/tasks` with A's bearer token. | `200`; JSON array contains both A-owned tasks with their IDs, titles, tags, and completion states. |
-| Filter/search success | As A, request tasks with `status_filter=active`, `tag=research`, and `q=quality`. | `200`; JSON array contains only the matching active task. |
-| Empty result | As A, search for a title fragment that does not exist. | `200`; JSON `[]`. |
-| Missing token | Request without `Authorization`. | `401`; JSON `detail`. |
-| Invalid/expired token | Request with a malformed token, then with an expired token. | Each returns `401`; JSON `detail`. |
-| Invalid filter | Request using `status_filter=unknown` with A's valid token. | `422`; JSON `detail`. |
-| User isolation | Register/log in as user B, then list tasks using B's valid token after A's tasks exist. | `200`; JSON array does not contain any A-owned task. |
+| List success | A registers/logs in; creates active `Research` task `Finish quality report` and one completed task; A lists tasks. | `200`; array contains both A tasks with IDs, titles, tags, completion states. |
+| Filter/search | A requests `status_filter=active`, `tag=research`, `q=quality`. | `200`; array contains only the matching active task. |
+| Empty result | A searches for a nonexistent title fragment. | `200`; `[]`. |
+| Invalid filter | A sends `status_filter=unknown`. | `422`; JSON `detail`. |
+| Missing / invalid token | Request without auth; then malformed token; then expired token. | Each `401`; JSON `detail`. |
+| Isolation | B lists tasks after A's tasks exist, using B's valid token. | `200`; no A-owned task appears. |
 
-### 2. `POST /api/tasks` — `UserBearer`
+---
 
-| Case | Setup and request | Expected |
-|---|---|---|
-| Success | Register/log in as user A. Submit `{"title":"Finish quality report","description":"Review results","tag":"Research","due_date":"2026-11-12","priority":"high"}` with A's valid token. | `201`; JSON task has a generated ID, submitted values, and `completed: false`; task is owned by A. |
-| Invalid data | With a valid token, submit a blank title; separately submit malformed `due_date` and unsupported priority. | Each returns `422`; JSON `detail`; no invalid task is created. |
-| Missing token | Submit an otherwise valid task without `Authorization`. | `401`; JSON `detail`; no task is created. |
-| Invalid/expired token | Submit an otherwise valid task with a malformed token, then an expired token. | Each returns `401`; JSON `detail`; no task is created. |
-
-### 3. `PUT /api/tasks/{task_id}` — `UserBearer`
-
-| Case | Setup and request | Expected |
-|---|---|---|
-| Success | A creates a task. A sends updated task fields with title `Submit quality report` and `completed: true` to its ID. | `200`; response has the same ID and reflects the updated title and completion state. A subsequent list confirms the persisted update. |
-| Invalid data | With A's valid token, update the task with a blank title or invalid priority. | `422`; JSON `detail`; original task remains unchanged. |
-| Missing task | With A's valid token, update a nonexistent ID. | `404`; JSON `detail`. |
-| Other user's task | B attempts to update A's task ID with B's valid token. | `404`; JSON `detail`; A's task remains unchanged. Do not reveal another user's task. |
-| Missing token | Attempt a valid update without `Authorization`. | `401`; JSON `detail`. |
-| Invalid/expired token | Attempt a valid update with a malformed token, then an expired token. | Each returns `401`; JSON `detail`. |
-
-### 4. `DELETE /api/tasks/{task_id}` — `UserBearer`
-
-| Case | Setup and request | Expected |
-|---|---|---|
-| Success | A creates a task and deletes its ID with A's valid token. | `204`; empty response body; subsequent task listing does not contain the task. |
-| Missing task | Delete a nonexistent ID with A's valid token. | `404`; JSON `detail`. |
-| Other user's task | B attempts to delete A's task ID using B's valid token. | `404`; JSON `detail`; A's task remains available to A. |
-| Missing token | Attempt deletion without `Authorization`. | `401`; JSON `detail`; task remains. |
-| Invalid/expired token | Attempt deletion with a malformed token, then an expired token. | Each returns `401`; JSON `detail`; task remains. |
-
-### 5. `GET /api/tags` — `UserBearer`
-
-| Case | Setup and request | Expected |
-|---|---|---|
-| Success | A requests tags with a valid token after creating tasks with built-in tags and custom tag `Research`. | `200`; JSON array includes `School`, `Work`, `House`, `Personal`, `Other`, and `Research`. |
-| Custom tag removal | A deletes the last A-owned task using `Research`, then requests tags again. | `200`; response no longer includes `Research`. |
-| Missing token | Request without `Authorization`. | `401`; JSON `detail`. |
-| Invalid/expired token | Request with a malformed token, then with an expired token. | Each returns `401`; JSON `detail`. |
-
-### 6. `POST /api/auth/register` — public
+## 2 — `POST /api/tasks` · `UserBearer`
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | Submit a unique valid `email`, `password`, and `display_name`. | `201`; JSON contains the account ID, email, and display name; it does not expose the plaintext password or password hash. |
-| Invalid input | Submit a malformed email or a missing/blank password. | `422`; JSON `detail`; account is not created. |
-| Duplicate account | Register the same email twice. | Second request returns `409`; JSON `detail`; there is only one account for that email. |
+| Success | A submits `{"title":"Finish quality report","description":"Review results","tag":"Research","due_date":"2026-11-12","priority":"high"}`. | `201`; generated ID, submitted values, `completed: false`; owned by A. |
+| Invalid data | With valid token, submit blank title; separately malformed due date and unsupported priority. | Each `422`; JSON `detail`; no invalid task is created. |
+| Missing token | Submit otherwise valid task without auth. | `401`; JSON `detail`; no task is created. |
+| Invalid/expired token | Submit with malformed token, then expired token. | Each `401`; JSON `detail`; no task is created. |
 
-### 7. `POST /api/auth/login` — public
+---
+
+## 3 — `PUT /api/tasks/{task_id}` · `UserBearer`
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | Submit the credentials for an account created through registration. | `200`; JSON contains a non-empty signed user access token usable as `UserBearer`; response does not expose the password/hash. |
-| Wrong password | Submit a registered email with an incorrect password. | `401`; JSON `detail`; no access token is returned. |
-| Unknown account | Submit credentials for an unregistered email. | `401`; JSON `detail`; no access token is returned. |
+| Success | A updates own task title to `Submit quality report` and sets `completed: true`; list again. | `200`; same ID, updated values persist. |
+| Invalid data | A updates with blank title or invalid priority. | `422`; JSON `detail`; original task unchanged. |
+| Missing task | A updates nonexistent ID. | `404`; JSON `detail`. |
+| Other user's task | B attempts to update A's task ID. | `404`; JSON `detail`; A's task unchanged and not disclosed. |
+| Missing / invalid token | Attempt valid update with no token; then malformed and expired tokens. | Each `401`; JSON `detail`. |
+
+---
+
+## 4 — `DELETE /api/tasks/{task_id}` · `UserBearer`
+
+| Case | Request | Expected |
+|---|---|---|
+| Success | A deletes own task with valid token; list tasks again. | `204`; empty body; deleted task absent. |
+| Missing task | A deletes nonexistent ID. | `404`; JSON `detail`. |
+| Other user's task | B attempts to delete A's task. | `404`; JSON `detail`; task remains available to A. |
+| Missing / invalid token | Attempt deletion without token; then malformed and expired tokens. | Each `401`; JSON `detail`; task remains. |
+
+---
+
+## 5 — `GET /api/tags` · `UserBearer`
+
+| Case | Request | Expected |
+|---|---|---|
+| Success | A creates tasks with built-in tags and custom `Research`, then lists tags. | `200`; array includes `School`, `Work`, `House`, `Personal`, `Other`, `Research`. |
+| Remove unused custom tag | A deletes the last A-owned task tagged `Research`, then lists tags. | `200`; `Research` is absent. |
+| Missing / invalid token | Request without token; then malformed and expired tokens. | Each `401`; JSON `detail`. |
+
+---
+
+## 6 — `POST /api/auth/register` · public
+
+| Case | Request | Expected |
+|---|---|---|
+| Success | Submit unique valid `email`, `password`, `display_name`. | `201`; account ID/email/display name; no plaintext password or hash. |
+| Invalid input | Submit malformed email or missing/blank password. | `422`; JSON `detail`; no account created. |
+| Duplicate account | Register the same email twice. | Second request `409`; JSON `detail`; only one account exists. |
+
+---
+
+## 7 — `POST /api/auth/login` · public
+
+| Case | Request | Expected |
+|---|---|---|
+| Success | Submit credentials for a registered account. | `200`; non-empty signed user token usable as `UserBearer`; no password/hash. |
+| Wrong password | Registered email with incorrect password. | `401`; JSON `detail`; no token. |
+| Unknown account | Credentials for unregistered email. | `401`; JSON `detail`; no token. |
 | Missing credentials | Omit email or password. | `422`; JSON `detail`. |
 
-### 8. `GET /api/users/me` — `UserBearer`
+---
 
-| Case | Setup and request | Expected |
+## 8 — `GET /api/users/me` · `UserBearer`
+
+| Case | Request | Expected |
 |---|---|---|
-| Success | Register/log in as A and request the endpoint using A's valid token. | `200`; JSON contains A's ID, email, and display name; no password/hash fields. |
-| Missing token | Request without `Authorization`. | `401`; JSON `detail`. |
-| Invalid/expired token | Request with a malformed token, then an expired token. | Each returns `401`; JSON `detail`. |
+| Success | A registers/logs in and reads profile with A's valid token. | `200`; A's ID/email/display name; no password/hash. |
+| Missing token | Request without authorization. | `401`; JSON `detail`. |
+| Invalid/expired token | Request with malformed token, then expired token. | Each `401`; JSON `detail`. |
 
-### 9. `PATCH /api/users/me` — `UserBearer`
+---
 
-| Case | Setup and request | Expected |
+## 9 — `PATCH /api/users/me` · `UserBearer`
+
+| Case | Request | Expected |
 |---|---|---|
-| Success | A sends `{"display_name":"A Updated"}` with A's valid token, then reads `/api/users/me`. | `200`; response and subsequent read contain `display_name: "A Updated"` and A's ID/email; no password/hash fields. |
-| Invalid input | With a valid token, submit an invalid or blank display name. | `422`; JSON `detail`; profile remains unchanged. |
-| Missing token | Submit a valid profile update without `Authorization`. | `401`; JSON `detail`; profile remains unchanged. |
-| Invalid/expired token | Submit a valid update with a malformed token, then an expired token. | Each returns `401`; JSON `detail`; profile remains unchanged. |
+| Success | A patches `{"display_name":"A Updated"}`, then reads profile. | `200`; updated display name persists; A's ID/email remain; no password/hash. |
+| Invalid input | A submits invalid or blank display name. | `422`; JSON `detail`; profile unchanged. |
+| Missing token | Submit valid update without authorization. | `401`; JSON `detail`; profile unchanged. |
+| Invalid/expired token | Submit with malformed token, then expired token. | Each `401`; JSON `detail`; profile unchanged. |
 
-### 10. `GET /api/admin/users` — `AdminBearer`
+---
 
-| Case | Setup and request | Expected |
+## 10 — `GET /api/admin/users` · `AdminBearer`
+
+| Case | Request | Expected |
 |---|---|---|
-| Success | Provision an admin account using the documented test fixture, create at least one regular user via registration, and request with the admin's valid token. | `200`; JSON array includes the regular user's ID/email and excludes all password/hash fields. |
-| Missing token | Request without `Authorization`. | `401`; JSON `detail`. |
-| Invalid/expired token | Request with a malformed token, then an expired token. | Each returns `401`; JSON `detail`. |
-| Insufficient role | Request with a valid regular user's `UserBearer` token. | `403`; JSON `detail`; user list is not returned. |
+| Success | Provision test admin; register a regular user; admin lists users with valid admin token. | `200`; array includes regular user's ID/email; no password/hash fields. |
+| Missing token | Request without authorization. | `401`; JSON `detail`. |
+| Invalid/expired token | Request with malformed token, then expired token. | Each `401`; JSON `detail`. |
+| Insufficient role | Request with valid regular user's token. | `403`; JSON `detail`; no user list returned. |
+
+---
 
 ## End-to-end workflow
 
-Run this workflow as an additional acceptance check: register user A, log in, use the returned token to read and update A's profile, create/list/update/complete/delete A's task, and list tags. Verify each step's status and response content against the cases above. Register and log in user B; verify B cannot read, update, or delete A's task by ID. Verify an unauthenticated request to each protected route is rejected.
+1. Register user A and log in; use the returned token to read and update A's profile.
+2. With A's token, create, list, update, complete, and delete a task; verify each response and final state.
+3. List tags and verify custom-tag inclusion/removal.
+4. Register and log in user B; verify B cannot read, update, or delete A's task by ID.
+5. Verify missing-token requests to every protected endpoint are rejected.
+6. Assert every step's status and body using the cases in this acceptance suite.
+
+---
 
 ## Results record
 
-Run all cases above using the same acceptance suite for each stage. Record expected and actual status/body assertions, total passed/failed counts, command, commit/revision, and test database setup. A stage is not a pass if any required case is skipped or missing.
+Record revision, exact command, test database setup, expected vs. actual status/body, and pass/fail counts for each stage.
 
-| Stage | Command and revision | Expected | Actual |
-|---|---|---|---|
-| Stage 1 — FastAPI + SQLite | Record when the complete suite is implemented and run. | Every case above passes. |  |
-| Stage 2 — SQLAlchemy/Pydantic | Record when Stage 2 and the same complete suite are available. | Every case above passes | |
+| Stage | Expected | Actual |
+|---|---|---|
+| Stage 1 — FastAPI + SQLite | Every planned case passes. | Not recorded for the complete planned-feature contract. |
+| Stage 2 — SQLAlchemy/Pydantic | Every case passes with the same requests and expected feature responses as Stage 1. | Not run. |
 
+**A failure must be fixed in the implementation. Never weaken or remove an acceptance assertion to make a run pass.**
