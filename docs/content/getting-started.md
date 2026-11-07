@@ -34,4 +34,4 @@ The checked-in API tests use a temporary SQLite database, so they do not depend 
 
 ## GitHub Pages demo
 
-The Pages build hosts the static browser app and this Hugo learning guide. Since Pages cannot run Python or SQLite, demo tasks are stored in browser-local storage and are not sent to the API. Browser-local behavior is separate from the backend API tests.
+The Pages build hosts the static browser app and this Hugo learning guide. 
