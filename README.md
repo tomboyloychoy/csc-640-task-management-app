@@ -39,21 +39,25 @@ The Hugo site provides engineering guidance for defining quality criteria, gathe
 
 GitHub Pages can publish static files but cannot run the FastAPI/SQLite backend; deploy the complete app to a Python-capable host to make it available online.
 
-## API Work Progress
+## API and authentication
 
-This plan includes the information about 10 APIs that this application would have. `UserBearer` and `AdminBearer` are the two proposed JWT bearer authorization profiles. Registration and login are public. Admin access would require an admin role.
+The local FastAPI app has route implementations for the ten APIs below, including JWT authentication and per-user task filtering. The current pytest suite covers the core registration/login/task lifecycle plus the critical auth edge cases from [tests/acceptance.md](tests/acceptance.md), including expired tokens and cross-user task isolation. The acceptance plan still acts as the broader contract for additional edge-case checks and staged Stage 2 parity.
 
-| # | Method | Path | Endpoint status | Authorization |
+Registration and login are public endpoints; task and profile routes require an authenticated `UserBearer` token. Administrators can access the user list through an `AdminBearer` token after provisioning an admin account via `TAMANA_ADMIN_EMAIL` and `TAMANA_ADMIN_PASSWORD`. User accounts and task ownership are stored in SQLite; passwords are bcrypt-hashed and queries use parameterized SQL.
+
+Configure `TAMANA_SECRET_KEY` to a strong, private value and set `TAMANA_TOKEN_TTL_MINUTES` for the deployment. The built-in signing key and fallback admin password are development defaults only; do not use them in a deployed environment. Existing tasks in a database created before authentication may have no owner and are not automatically assigned to a user.
+
+| # | Method | Path | Route implementation | Authorization |
 |---|---|---|---|---|
-| 1 | `GET` | `/api/tasks` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
-| 2 | `POST` | `/api/tasks` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
-| 3 | `PUT` | `/api/tasks/{task_id}` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
-| 4 | `DELETE` | `/api/tasks/{task_id}` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
-| 5 | `GET` | `/api/tags` | IMPLEMENTED | `UserBearer` — TO-BE-IMPLEMENTED |
-| 6 | `POST` | `/api/auth/register` | TO-BE-IMPLEMENTED | Public |
-| 7 | `POST` | `/api/auth/login` | TO-BE-IMPLEMENTED | Public; returns a `UserBearer` JWT |
-| 8 | `GET` | `/api/users/me` | TO-BE-IMPLEMENTED | `UserBearer` |
-| 9 | `PATCH` | `/api/users/me` | TO-BE-IMPLEMENTED | `UserBearer` |
-| 10 | `GET` | `/api/admin/users` | TO-BE-IMPLEMENTED | `AdminBearer` |
+| 1 | `GET` | `/api/tasks` | Present; acceptance coverage incomplete | `UserBearer` |
+| 2 | `POST` | `/api/tasks` | Present; acceptance coverage incomplete | `UserBearer` |
+| 3 | `PUT` | `/api/tasks/{task_id}` | Present; acceptance coverage incomplete | `UserBearer` |
+| 4 | `DELETE` | `/api/tasks/{task_id}` | Present; acceptance coverage incomplete | `UserBearer` |
+| 5 | `GET` | `/api/tags` | Present; acceptance coverage incomplete | `UserBearer` |
+| 6 | `POST` | `/api/auth/register` | Present; acceptance coverage incomplete | Public |
+| 7 | `POST` | `/api/auth/login` | Present; acceptance coverage incomplete | Public; returns a `UserBearer` JWT |
+| 8 | `GET` | `/api/users/me` | Present; acceptance coverage incomplete | `UserBearer` |
+| 9 | `PATCH` | `/api/users/me` | Present; acceptance coverage incomplete | `UserBearer` |
+| 10 | `GET` | `/api/admin/users` | Present; acceptance coverage incomplete | `AdminBearer` |
 
-`IMPLEMENTED` describes the existing endpoint functionality only: the current task and tag routes are unauthenticated. Adding JWT authentication, user accounts, and per-user task ownership remains **TO-BE-IMPLEMENTED**. Token lifetime, signing-key configuration, and admin-account provisioning still need design decisions.
+The static GitHub Pages demo continues to use browser-local storage and does not run the FastAPI backend. Run `python -m pytest -q` for the current automated tests; completing the cases in `tests/acceptance.md` and addressing any failures remains part of finishing the API work.

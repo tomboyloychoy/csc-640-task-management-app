@@ -1,18 +1,29 @@
 from __future__ import annotations
 
+import os
+import re
 import sqlite3
 from contextlib import asynccontextmanager, closing
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, status
+import bcrypt
+import jwt
+from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
+from jwt import ExpiredSignatureError, InvalidTokenError
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = ROOT_DIR / "frontend"
 DEFAULT_TAGS = ("School", "Work", "House", "Personal", "Other")
 PRIORITIES = {"low", "normal", "high"}
+SECRET_KEY = os.getenv("TAMANA_SECRET_KEY", "tamana-dev-secret-key")
+ALGORITHM = "HS256"
+TOKEN_TTL_MINUTES = int(os.getenv("TAMANA_TOKEN_TTL_MINUTES", "1440"))
+EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+security = HTTPBearer(auto_error=False)
 
 
 def create_app(database_path: Path | str | None = None) -> FastAPI:
@@ -28,8 +39,22 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         with closing(connect()) as connection:
             connection.execute(
                 """
+                CREATE TABLE IF NOT EXISTS users (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email TEXT NOT NULL UNIQUE,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT NOT NULL,
+                    is_admin INTEGER NOT NULL DEFAULT 0
+                        CHECK (is_admin IN (0, 1)),
+                    created_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.execute(
+                """
                 CREATE TABLE IF NOT EXISTS tasks (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
                     title TEXT NOT NULL,
                     description TEXT NOT NULL DEFAULT '',
                     tag TEXT NOT NULL DEFAULT 'Personal',
@@ -38,9 +63,45 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
                         CHECK (priority IN ('low', 'normal', 'high')),
                     completed INTEGER NOT NULL DEFAULT 0
                         CHECK (completed IN (0, 1)),
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    FOREIGN KEY (user_id) REFERENCES users(id)
                 )
                 """
+            )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)"
+            )
+            existing_columns = [
+                row[1] for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
+            ]
+            if "user_id" not in existing_columns:
+                connection.execute(
+                    "ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)"
+                )
+            connection.commit()
+            ensure_admin_account(connection)
+
+    def ensure_admin_account(connection: sqlite3.Connection) -> None:
+        admin_email = os.getenv("TAMANA_ADMIN_EMAIL")
+        if not admin_email:
+            return
+        admin_password = os.getenv("TAMANA_ADMIN_PASSWORD", "admin123")
+        existing = connection.execute(
+            "SELECT id FROM users WHERE email = ?",
+            (admin_email,),
+        ).fetchone()
+        if existing is None:
+            connection.execute(
+                """
+                INSERT INTO users (email, password_hash, display_name, is_admin, created_at)
+                VALUES (?, ?, ?, 1, ?)
+                """,
+                (
+                    admin_email,
+                    bcrypt.hashpw(admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+                    os.getenv("TAMANA_ADMIN_DISPLAY_NAME", "Administrator"),
+                    datetime.now(timezone.utc).isoformat(),
+                ),
             )
             connection.commit()
 
@@ -105,8 +166,157 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         task["completed"] = bool(task["completed"])
         return task
 
+    def create_access_token(user_id: int) -> str:
+        expires_at = datetime.now(timezone.utc) + timedelta(minutes=TOKEN_TTL_MINUTES)
+        payload = {"sub": str(user_id), "exp": expires_at}
+        return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+    def decode_access_token(token: str) -> int:
+        try:
+            payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        except ExpiredSignatureError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expired.") from exc
+        except InvalidTokenError as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.") from exc
+
+        user_id = payload.get("sub")
+        if user_id is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        try:
+            return int(user_id)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.") from exc
+
+    def get_current_user(credentials: HTTPAuthorizationCredentials | None = Depends(security)) -> sqlite3.Row:
+        if credentials is None or not credentials.scheme.lower() == "bearer":
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated.")
+
+        user_id = decode_access_token(credentials.credentials)
+        with closing(connect()) as connection:
+            user = connection.execute(
+                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                (user_id,),
+            ).fetchone()
+        if user is None:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token.")
+        return user
+
+    def get_admin_user(current_user: sqlite3.Row = Depends(get_current_user)) -> sqlite3.Row:
+        if not current_user["is_admin"]:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin access required.")
+        return current_user
+
+    def user_response(row: sqlite3.Row) -> dict[str, Any]:
+        return {
+            "id": row["id"],
+            "email": row["email"],
+            "display_name": row["display_name"],
+        }
+
+    def validated_email(value: Any) -> str:
+        if not isinstance(value, str) or not EMAIL_RE.match(value):
+            raise HTTPException(status_code=422, detail="A valid email address is required.")
+        return value.strip().lower()
+
+    def validated_password(value: Any) -> str:
+        if not isinstance(value, str) or not value.strip():
+            raise HTTPException(status_code=422, detail="A password is required.")
+        if len(value) < 8:
+            raise HTTPException(status_code=422, detail="Passwords must be at least 8 characters long.")
+        return value
+
+    def validated_display_name(value: Any) -> str:
+        if not isinstance(value, str):
+            raise HTTPException(status_code=422, detail="Display name must be text.")
+        display_name = value.strip()
+        if not display_name:
+            raise HTTPException(status_code=422, detail="Display name cannot be blank.")
+        if len(display_name) > 80:
+            raise HTTPException(status_code=422, detail="Display names must be 80 characters or fewer.")
+        return display_name
+
+    @application.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
+    async def register_user(request: Request) -> dict[str, Any]:
+        data = await read_json(request)
+        email = validated_email(data.get("email"))
+        password = validated_password(data.get("password"))
+        display_name = validated_display_name(data.get("display_name", email.split("@", 1)[0]))
+
+        with closing(connect()) as connection:
+            existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+            if existing is not None:
+                raise HTTPException(status_code=409, detail="An account with that email already exists.")
+
+            cursor = connection.execute(
+                """
+                INSERT INTO users (email, password_hash, display_name, is_admin, created_at)
+                VALUES (?, ?, ?, 0, ?)
+                """,
+                (
+                    email,
+                    bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
+                    display_name,
+                    datetime.now(timezone.utc).isoformat(),
+                ),
+            )
+            connection.commit()
+            user = connection.execute(
+                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                (cursor.lastrowid,),
+            ).fetchone()
+
+        return user_response(user)
+
+    @application.post("/api/auth/login")
+    async def login_user(request: Request) -> dict[str, Any]:
+        data = await read_json(request)
+        email = validated_email(data.get("email"))
+        password = validated_password(data.get("password"))
+
+        with closing(connect()) as connection:
+            user = connection.execute(
+                "SELECT id, email, display_name, password_hash, is_admin FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+
+        if user is None or not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+        token = create_access_token(user["id"])
+        return {"access_token": token, "token_type": "bearer"}
+
+    @application.get("/api/users/me")
+    def read_user(current_user: sqlite3.Row = Depends(get_current_user)) -> dict[str, Any]:
+        return user_response(current_user)
+
+    @application.patch("/api/users/me")
+    async def update_user(request: Request, current_user: sqlite3.Row = Depends(get_current_user)) -> dict[str, Any]:
+        data = await read_json(request)
+        display_name = validated_display_name(data.get("display_name"))
+
+        with closing(connect()) as connection:
+            connection.execute(
+                "UPDATE users SET display_name = ? WHERE id = ?",
+                (display_name, current_user["id"]),
+            )
+            connection.commit()
+            user = connection.execute(
+                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                (current_user["id"],),
+            ).fetchone()
+        return user_response(user)
+
+    @application.get("/api/admin/users")
+    def list_users(current_user: sqlite3.Row = Depends(get_admin_user)) -> list[dict[str, Any]]:
+        with closing(connect()) as connection:
+            rows = connection.execute(
+                "SELECT id, email, display_name, is_admin, password_hash FROM users ORDER BY id ASC"
+            ).fetchall()
+        return [user_response(row) for row in rows]
+
     @application.get("/api/tasks")
     def list_tasks(
+        current_user: sqlite3.Row = Depends(get_current_user),
         status_filter: str = "all",
         tag: str | None = None,
         q: str = "",
@@ -114,8 +324,8 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         if status_filter not in {"all", "active", "completed"}:
             raise HTTPException(status_code=422, detail="Status filter must be all, active, or completed.")
 
-        clauses: list[str] = []
-        parameters: list[Any] = []
+        clauses: list[str] = ["user_id = ?"]
+        parameters: list[Any] = [current_user["id"]]
         if status_filter == "active":
             clauses.append("completed = 0")
         elif status_filter == "completed":
@@ -132,7 +342,7 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         with closing(connect()) as connection:
             rows = connection.execute(
                 f"""
-                SELECT id, title, description, tag, due_date, priority, completed, created_at
+                SELECT id, user_id, title, description, tag, due_date, priority, completed, created_at
                 FROM tasks
                 {where}
                 ORDER BY completed ASC, due_date IS NULL ASC, due_date ASC, created_at DESC
@@ -142,10 +352,11 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return [task_dict(row) for row in rows]
 
     @application.get("/api/tags")
-    def list_tags() -> list[str]:
+    def list_tags(current_user: sqlite3.Row = Depends(get_current_user)) -> list[str]:
         with closing(connect()) as connection:
             rows = connection.execute(
-                "SELECT DISTINCT tag FROM tasks ORDER BY tag COLLATE NOCASE"
+                "SELECT DISTINCT tag FROM tasks WHERE user_id = ? ORDER BY tag COLLATE NOCASE",
+                (current_user["id"],),
             ).fetchall()
         tags = list(DEFAULT_TAGS)
         known = {value.casefold() for value in tags}
@@ -157,26 +368,30 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return tags
 
     @application.post("/api/tasks", status_code=status.HTTP_201_CREATED)
-    async def create_task(request: Request) -> dict[str, Any]:
+    async def create_task(request: Request, current_user: sqlite3.Row = Depends(get_current_user)) -> dict[str, Any]:
         title, description, tag, due_date, priority = validated_task(await read_json(request))
         created_at = datetime.now(timezone.utc).isoformat()
         with closing(connect()) as connection:
             cursor = connection.execute(
                 """
-                INSERT INTO tasks (title, description, tag, due_date, priority, created_at)
-                VALUES (?, ?, ?, ?, ?, ?)
+                INSERT INTO tasks (user_id, title, description, tag, due_date, priority, completed, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
                 """,
-                (title, description, tag, due_date, priority, created_at),
+                (current_user["id"], title, description, tag, due_date, priority, created_at),
             )
             connection.commit()
             row = connection.execute(
-                "SELECT id, title, description, tag, due_date, priority, completed, created_at FROM tasks WHERE id = ?",
+                "SELECT id, user_id, title, description, tag, due_date, priority, completed, created_at FROM tasks WHERE id = ?",
                 (cursor.lastrowid,),
             ).fetchone()
         return task_dict(row)
 
     @application.put("/api/tasks/{task_id}")
-    async def update_task(task_id: int, request: Request) -> dict[str, Any]:
+    async def update_task(
+        task_id: int,
+        request: Request,
+        current_user: sqlite3.Row = Depends(get_current_user),
+    ) -> dict[str, Any]:
         data = await read_json(request)
         title, description, tag, due_date, priority = validated_task(data)
         completed = data.get("completed", False)
@@ -188,23 +403,32 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
                 """
                 UPDATE tasks
                 SET title = ?, description = ?, tag = ?, due_date = ?, priority = ?, completed = ?
-                WHERE id = ?
+                WHERE id = ? AND user_id = ?
                 """,
-                (title, description, tag, due_date, priority, int(completed), task_id),
+                (title, description, tag, due_date, priority, int(completed), task_id, current_user["id"]),
             )
             connection.commit()
             if cursor.rowcount == 0:
+                existing = connection.execute(
+                    "SELECT id FROM tasks WHERE id = ?",
+                    (task_id,),
+                ).fetchone()
+                if existing is None:
+                    raise HTTPException(status_code=404, detail="Task not found.")
                 raise HTTPException(status_code=404, detail="Task not found.")
             row = connection.execute(
-                "SELECT id, title, description, tag, due_date, priority, completed, created_at FROM tasks WHERE id = ?",
+                "SELECT id, user_id, title, description, tag, due_date, priority, completed, created_at FROM tasks WHERE id = ?",
                 (task_id,),
             ).fetchone()
         return task_dict(row)
 
     @application.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-    def delete_task(task_id: int) -> None:
+    def delete_task(task_id: int, current_user: sqlite3.Row = Depends(get_current_user)) -> None:
         with closing(connect()) as connection:
-            cursor = connection.execute("DELETE FROM tasks WHERE id = ?", (task_id,))
+            cursor = connection.execute(
+                "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+                (task_id, current_user["id"]),
+            )
             connection.commit()
         if cursor.rowcount == 0:
             raise HTTPException(status_code=404, detail="Task not found.")
