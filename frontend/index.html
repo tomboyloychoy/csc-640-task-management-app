@@ -9,11 +9,37 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles.css">
-    <script src="./app.js" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=auth-flow-3">
+    <script src="./app.js?v=username-auth-1" defer></script>
   </head>
   <body>
-    <div class="app-shell">
+    <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title" hidden>
+      <div class="auth-card">
+        <a class="brand auth-brand" href="./" aria-label="Tamana">
+          <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+          <span>tamana</span>
+        </a>
+        <p class="eyebrow"><span class="eyebrow-dot"></span> YOUR SPACE, YOUR PACE</p>
+        <h1 id="auth-title">Welcome back<span class="title-period">.</span></h1>
+        <p class="auth-copy" id="auth-copy">Sign in to pick up where you left off.</p>
+        <div class="auth-mode-switch" role="group" aria-label="Choose sign in or register">
+          <button class="is-active" data-auth-mode="login" type="button" aria-pressed="true">Sign in</button>
+          <button data-auth-mode="register" type="button" aria-pressed="false">Create account</button>
+        </div>
+        <form id="auth-form">
+          <label class="field-label" id="auth-name-label" for="auth-display-name" hidden>Name</label>
+          <input class="text-field" id="auth-display-name" name="display_name" autocomplete="name" maxlength="80" placeholder="Your name" hidden>
+          <label class="field-label" for="auth-username">Username</label>
+          <input class="text-field" id="auth-username" name="username" type="text" autocomplete="username" minlength="3" maxlength="30" pattern="[A-Za-z0-9_]{3,30}" autocapitalize="none" spellcheck="false" placeholder="e.g. tamana_user" required>
+          <label class="field-label" for="auth-password">Password</label>
+          <input class="text-field" id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" required>
+          <p class="form-error" id="auth-error" role="alert"></p>
+          <button class="primary-button auth-submit" id="auth-submit" type="submit">Sign in <span>→</span></button>
+        </form>
+      </div>
+    </section>
+
+    <div class="app-shell" id="app-shell" hidden>
       <aside class="sidebar">
         <a class="brand" href="./" aria-label="Tamana home">
           <span class="brand-mark" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
@@ -54,9 +80,9 @@
         </section>
 
         <div class="sidebar-footer">
-          <div class="avatar">T</div>
-          <div class="profile-copy"><strong>Your space</strong><span>Personal workspace</span></div>
-          <span class="more-dots" aria-hidden="true">···</span>
+          <div class="avatar" id="user-avatar">T</div>
+          <div class="profile-copy"><strong id="user-name">Your space</strong><span id="user-username">Personal workspace</span></div>
+          <button class="sign-out-button" id="sign-out-button" type="button" aria-label="Sign out" title="Sign out">↪</button>
         </div>
       </aside>
 

@@ -1,3 +1,5 @@
+const tokenStorageKey = "tamana.access_token";
+
 const state = {
   status: "all",
   tag: null,
@@ -5,6 +7,9 @@ const state = {
   tags: [],
   editingTask: null,
   toastTimer: null,
+  token: localStorage.getItem(tokenStorageKey),
+  user: null,
+  authMode: "login",
 };
 
 const isGitHubPages = location.hostname.endsWith(".github.io")
@@ -13,6 +18,17 @@ const storageKey = "tamana.tasks.v1";
 const defaultTags = ["School", "Work", "House", "Personal", "Other"];
 
 const elements = {
+  appShell: document.querySelector("#app-shell"),
+  authScreen: document.querySelector("#auth-screen"),
+  authForm: document.querySelector("#auth-form"),
+  authNameLabel: document.querySelector("#auth-name-label"),
+  authName: document.querySelector("#auth-display-name"),
+  authUsername: document.querySelector("#auth-username"),
+  authPassword: document.querySelector("#auth-password"),
+  authError: document.querySelector("#auth-error"),
+  authSubmit: document.querySelector("#auth-submit"),
+  authTitle: document.querySelector("#auth-title"),
+  authCopy: document.querySelector("#auth-copy"),
   taskList: document.querySelector("#task-list"),
   emptyState: document.querySelector("#empty-state"),
   emptyTitle: document.querySelector("#empty-title"),
@@ -109,9 +125,12 @@ function staticApi(path, options = {}) {
 
 async function api(path, options = {}) {
   if (isGitHubPages) return staticApi(path, options);
+  const headers = new Headers(options.headers ?? {});
+  headers.set("Content-Type", "application/json");
+  if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   const response = await fetch(path, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers,
   });
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;
@@ -121,9 +140,97 @@ async function api(path, options = {}) {
     } catch {
       // Keep the HTTP status message when the server does not return JSON.
     }
+    if (response.status === 401 && state.token && !path.startsWith("/api/auth/")) {
+      clearSession();
+      showAuth("Your session has expired. Please sign in again.");
+    }
     throw new Error(message);
   }
   return response.status === 204 ? null : response.json();
+}
+
+function clearSession() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem(tokenStorageKey);
+}
+
+function showAuth(message = "") {
+  elements.appShell.hidden = true;
+  elements.authScreen.hidden = false;
+  elements.authError.textContent = message;
+  elements.authUsername.focus();
+}
+
+function showWorkspace() {
+  if (!isGitHubPages && !state.token) {
+    showAuth("Please sign in to continue.");
+    return;
+  }
+  elements.authScreen.hidden = true;
+  elements.appShell.hidden = false;
+  if (state.user) {
+    document.querySelector("#user-name").textContent = state.user.display_name;
+    document.querySelector("#user-username").textContent = state.user.username;
+    document.querySelector("#user-avatar").textContent = state.user.display_name.charAt(0).toUpperCase();
+  }
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const registering = mode === "register";
+  elements.authTitle.innerHTML = registering
+    ? `Create your account<span class="title-period">.</span>`
+    : `Welcome back<span class="title-period">.</span>`;
+  elements.authCopy.textContent = registering
+    ? "A little space to organize what matters."
+    : "Sign in to pick up where you left off.";
+  elements.authNameLabel.hidden = !registering;
+  elements.authName.hidden = !registering;
+  elements.authName.required = registering;
+  elements.authPassword.autocomplete = registering ? "new-password" : "current-password";
+  elements.authSubmit.innerHTML = registering ? "Create account <span>→</span>" : "Sign in <span>→</span>";
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    const active = button.dataset.authMode === mode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  elements.authError.textContent = "";
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  elements.authSubmit.disabled = true;
+  elements.authError.textContent = "";
+  const credentials = {
+    username: elements.authUsername.value.trim(),
+    password: elements.authPassword.value,
+  };
+  try {
+    if (state.authMode === "register") {
+      await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          ...credentials,
+          display_name: elements.authName.value.trim(),
+        }),
+      });
+    }
+    const result = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(credentials),
+    });
+    state.token = result.access_token;
+    localStorage.setItem(tokenStorageKey, state.token);
+    state.user = await api("/api/users/me");
+    await loadTags();
+    await loadTasks();
+    showWorkspace();
+  } catch (error) {
+    elements.authError.textContent = error.message;
+  } finally {
+    elements.authSubmit.disabled = false;
+  }
 }
 
 function setBusy(isBusy) {
@@ -241,6 +348,10 @@ function updateViewTitle() {
 }
 
 function openDialog(task = null, initialTag = "") {
+  if (!isGitHubPages && !state.token) {
+    showAuth();
+    return;
+  }
   state.editingTask = task;
   elements.form.reset();
   elements.formError.textContent = "";
@@ -322,6 +433,19 @@ async function deleteTask(task) {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
+  });
+  elements.authForm.addEventListener("submit", submitAuth);
+  const signOutButton = document.querySelector("#sign-out-button");
+  if (isGitHubPages) signOutButton.hidden = true;
+  signOutButton.addEventListener("click", () => {
+    if (isGitHubPages) return;
+    clearSession();
+    elements.authForm.reset();
+    setAuthMode("login");
+    showAuth();
+  });
   document.querySelectorAll(".primary-nav .nav-item").forEach((button) => {
     button.addEventListener("click", () => setView(button.dataset.status));
   });
@@ -378,10 +502,23 @@ function setDateLabels() {
 async function initialize() {
   bindEvents();
   setDateLabels();
+  if (!isGitHubPages && !state.token) {
+    setAuthMode(location.hash === "#register" ? "register" : "login");
+    showAuth();
+    return;
+  }
   try {
+    if (!isGitHubPages) state.user = await api("/api/users/me");
     await loadTags();
     await loadTasks();
+    showWorkspace();
   } catch (error) {
+    if (!isGitHubPages) {
+      setAuthMode("login");
+      showAuth(state.token ? error.message : "Please sign in to continue.");
+      return;
+    }
+    showWorkspace();
     showToast(`Tamana couldn’t start: ${error.message}`);
     elements.emptyState.hidden = false;
     elements.emptyTitle.textContent = "Tamana couldn’t start.";

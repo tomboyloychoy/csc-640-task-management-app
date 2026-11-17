@@ -43,9 +43,11 @@ GitHub Pages can publish static files but cannot run the FastAPI/SQLite backend;
 
 The local FastAPI app has route implementations for the ten APIs below, including JWT authentication and per-user task filtering. The current pytest suite covers the core registration/login/task lifecycle plus the critical auth edge cases from [tests/acceptance.md](tests/acceptance.md), including expired tokens and cross-user task isolation. The acceptance plan still acts as the broader contract for additional edge-case checks and staged Stage 2 parity.
 
-Registration and login are public endpoints; task and profile routes require an authenticated `UserBearer` token. Administrators can access the user list through an `AdminBearer` token after provisioning an admin account via `TAMANA_ADMIN_EMAIL` and `TAMANA_ADMIN_PASSWORD`. User accounts and task ownership are stored in SQLite; passwords are bcrypt-hashed and queries use parameterized SQL.
+Registration and login are public endpoints; task and profile routes require an authenticated `UserBearer` token. Registration and login use a unique username (3-30 letters, numbers, or underscores; case-insensitive) and password. Administrators can access the user list through an `AdminBearer` token after provisioning an admin account via `TAMANA_ADMIN_USERNAME` and `TAMANA_ADMIN_PASSWORD`. User accounts and task ownership are stored in SQLite; passwords are bcrypt-hashed and queries use parameterized SQL.
 
-Configure `TAMANA_SECRET_KEY` to a strong, private value and set `TAMANA_TOKEN_TTL_MINUTES` for the deployment. The built-in signing key and fallback admin password are development defaults only; do not use them in a deployed environment. Existing tasks in a database created before authentication may have no owner and are not automatically assigned to a user.
+In the local browser app, visitors without a valid session are shown the sign-in/register screen before they can access tasks. After signing in, the app keeps the JWT in browser storage and sends it with protected API requests; signing out clears it. The GitHub Pages demo remains unauthenticated and stores tasks only in browser-local storage.
+
+Configure `TAMANA_SECRET_KEY` to a strong, private value and set `TAMANA_TOKEN_TTL_MINUTES` for the deployment. The built-in signing key and fallback admin password are development defaults only; do not use them in a deployed environment. When an older database is upgraded, existing account usernames are derived from the part of the email address before `@`; user IDs and task ownership are preserved. Existing tasks from before authentication may still have no owner and are not automatically assigned to a user.
 
 | # | Method | Path | Route implementation | Authorization |
 |---|---|---|---|---|

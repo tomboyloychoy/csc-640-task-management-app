@@ -32,6 +32,7 @@ button { color: inherit; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #c9c1ff; outline-offset: 2px; }
 
 .app-shell { display: flex; min-height: 100vh; }
+#app-shell[hidden], #auth-screen[hidden] { display: none; }
 .sidebar { position: fixed; inset: 0 auto 0 0; z-index: 3; display: flex; width: 252px; flex-direction: column; padding: 30px 18px 17px; background: #fff; border-right: 1px solid #eff0ef; }
 .brand { display: flex; width: fit-content; align-items: center; gap: 10px; margin: 0 0 37px 9px; color: var(--ink); font-family: var(--font-display); font-size: 23px; font-weight: 800; letter-spacing: -1.5px; text-decoration: none; }
 .brand-mark { display: grid; width: 25px; height: 25px; grid-template-columns: repeat(2, 1fr); grid-template-rows: repeat(2, 1fr); gap: 3px; transform: rotate(-8deg); }
@@ -71,7 +72,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .profile-copy { display: grid; gap: 2px; }
 .profile-copy strong { font-size: 12px; font-weight: 600; }
 .profile-copy span { color: #9a9ba3; font-size: 10px; }
-.more-dots { margin-left: auto; color: #9a9ba3; font-size: 18px; }
+.sign-out-button { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; margin-left: auto; color: #888995; background: transparent; border: 0; border-radius: 7px; cursor: pointer; font-size: 19px; }
+.sign-out-button[hidden] { display: none; }
+.sign-out-button:hover { color: var(--violet); background: #f1effb; }
 
 .main-content { width: calc(100% - 252px); max-width: 1530px; min-height: 100vh; margin-left: 252px; padding: 0 60px 40px; }
 .topbar { display: flex; height: 72px; align-items: center; justify-content: space-between; border-bottom: 1px solid #e9eae8; }
@@ -182,6 +185,20 @@ h1 { margin-bottom: 6px; font-family: var(--font-display); font-size: clamp(32px
 .secondary-button:hover { background: #f8f8f9; }
 .dialog-actions .primary-button { min-height: 39px; font-size: 12px; }
 
+.auth-screen { display: grid; min-height: 100vh; place-items: center; padding: 28px 16px; }
+.auth-card [hidden] { display: none; }
+.auth-card { width: min(420px, 100%); padding: 38px; background: #fff; border: 1px solid #efeff0; border-radius: 14px; box-shadow: 0 12px 40px #23242b08; }
+.auth-brand { margin: 0 0 35px; }
+.auth-card > .eyebrow { margin-bottom: 10px; }
+.auth-card h1 { font-size: 30px; letter-spacing: -1.2px; }
+.auth-copy { margin: 0 0 22px; color: #92939b; font-size: 12px; }
+.auth-mode-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 22px; padding: 4px; background: #f7f7f8; border-radius: 8px; }
+.auth-mode-switch button { min-height: 35px; color: #858690; background: transparent; border: 0; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.auth-mode-switch button.is-active { color: #6253be; background: #fff; box-shadow: 0 1px 4px #23242b12; font-weight: 600; }
+.auth-card .text-field { margin-bottom: 16px; }
+.auth-submit { width: 100%; margin-top: 9px; }
+.auth-card .form-error:not(:empty) { margin: -2px 0 10px; }
+
 @media (min-width: 1500px) { .main-content { margin-right: auto; margin-left: 252px; } }
 @media (max-width: 1150px) {
   .main-content { padding-right: 34px; padding-left: 34px; }
@@ -193,7 +210,7 @@ h1 { margin-bottom: 6px; font-family: var(--font-display); font-size: clamp(32px
 @media (max-width: 800px) {
   .sidebar { width: 70px; align-items: center; padding: 24px 10px 15px; }
   .brand { margin: 0 0 32px; }
-  .brand > span:last-child, .new-task-button > span:not(.plus-icon), .nav-label, .nav-item > span:not(.nav-icon), .tag-nav .nav-item > span:not(.tag-dot), .section-heading .add-tag-button, .sidebar-footer .profile-copy, .sidebar-footer .more-dots { display: none; }
+  .brand > span:last-child, .new-task-button > span:not(.plus-icon), .nav-label, .nav-item > span:not(.nav-icon), .tag-nav .nav-item > span:not(.tag-dot), .section-heading .add-tag-button, .sidebar-footer .profile-copy { display: none; }
   .new-task-button { width: 42px; justify-content: center; padding: 0; }
   .new-task-button .plus-icon { font-size: 24px; }
   .primary-nav { width: 100%; margin-top: 30px; }
@@ -240,6 +257,7 @@ h1 { margin-bottom: 6px; font-family: var(--font-display); font-size: clamp(32px
   .task-action { width: 24px; height: 24px; }
   .task-copy { padding-right: 36px; }
   .task-dialog form { padding: 23px 20px 19px; }
+  .auth-card { padding: 29px 23px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

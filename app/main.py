@@ -22,7 +22,7 @@ PRIORITIES = {"low", "normal", "high"}
 SECRET_KEY = os.getenv("TAMANA_SECRET_KEY", "tamana-dev-secret-key")
 ALGORITHM = "HS256"
 TOKEN_TTL_MINUTES = int(os.getenv("TAMANA_TOKEN_TTL_MINUTES", "1440"))
-EMAIL_RE = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+USERNAME_RE = re.compile(r"^[A-Za-z0-9_]{3,30}$")
 security = HTTPBearer(auto_error=False)
 
 
@@ -37,19 +37,14 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
 
     def initialize_database() -> None:
         with closing(connect()) as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT NOT NULL UNIQUE,
-                    password_hash TEXT NOT NULL,
-                    display_name TEXT NOT NULL,
-                    is_admin INTEGER NOT NULL DEFAULT 0
-                        CHECK (is_admin IN (0, 1)),
-                    created_at TEXT NOT NULL
-                )
-                """
-            )
+            user_columns = {
+                row["name"] for row in connection.execute("PRAGMA table_info(users)")
+            }
+            if not user_columns:
+                create_users_table(connection, "users")
+            elif "username" not in user_columns:
+                migrate_users_to_username(connection)
+
             connection.execute(
                 """
                 CREATE TABLE IF NOT EXISTS tasks (
@@ -68,9 +63,6 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
                 )
                 """
             )
-            connection.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)"
-            )
             existing_columns = [
                 row[1] for row in connection.execute("PRAGMA table_info(tasks)").fetchall()
             ]
@@ -78,26 +70,95 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
                 connection.execute(
                     "ALTER TABLE tasks ADD COLUMN user_id INTEGER REFERENCES users(id)"
                 )
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_tasks_user_id ON tasks(user_id)"
+            )
             connection.commit()
             ensure_admin_account(connection)
 
+    def create_users_table(connection: sqlite3.Connection, table_name: str) -> None:
+        connection.execute(
+            f"""
+            CREATE TABLE {table_name} (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+                password_hash TEXT NOT NULL,
+                display_name TEXT NOT NULL,
+                is_admin INTEGER NOT NULL DEFAULT 0
+                    CHECK (is_admin IN (0, 1)),
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+
+    def migrate_users_to_username(connection: sqlite3.Connection) -> None:
+        connection.execute("PRAGMA foreign_keys = OFF")
+        connection.execute("BEGIN IMMEDIATE")
+        create_users_table(connection, "users_username_migration")
+        used_usernames: set[str] = set()
+        old_users = connection.execute(
+            "SELECT id, email, password_hash, display_name, is_admin, created_at FROM users ORDER BY id"
+        ).fetchall()
+        for user in old_users:
+            username = username_from_legacy_email(user["email"], used_usernames)
+            connection.execute(
+                """
+                INSERT INTO users_username_migration
+                    (id, username, password_hash, display_name, is_admin, created_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    user["id"],
+                    username,
+                    user["password_hash"],
+                    user["display_name"],
+                    user["is_admin"],
+                    user["created_at"],
+                ),
+            )
+        connection.execute("DROP TABLE users")
+        connection.execute("ALTER TABLE users_username_migration RENAME TO users")
+        connection.commit()
+
+    def username_from_legacy_email(email: str, used_usernames: set[str]) -> str:
+        local_part = email.split("@", 1)[0].lower()
+        base = re.sub(r"[^a-z0-9_]", "_", local_part).strip("_")
+        if len(base) < 3:
+            base = f"{base}user"
+        base = base[:30]
+        username = base
+        suffix = 2
+        while username.casefold() in used_usernames:
+            suffix_text = f"_{suffix}"
+            username = f"{base[:30 - len(suffix_text)]}{suffix_text}"
+            suffix += 1
+        used_usernames.add(username.casefold())
+        return username
+
     def ensure_admin_account(connection: sqlite3.Connection) -> None:
-        admin_email = os.getenv("TAMANA_ADMIN_EMAIL")
-        if not admin_email:
+        admin_username = os.getenv("TAMANA_ADMIN_USERNAME")
+        if not admin_username:
+            legacy_admin_email = os.getenv("TAMANA_ADMIN_EMAIL")
+            if legacy_admin_email:
+                admin_username = legacy_admin_email.split("@", 1)[0]
+        if not admin_username:
             return
+        admin_username = admin_username.strip().lower()
+        if not USERNAME_RE.fullmatch(admin_username):
+            raise ValueError("TAMANA_ADMIN_USERNAME must be 3-30 letters, numbers, or underscores.")
         admin_password = os.getenv("TAMANA_ADMIN_PASSWORD", "admin123")
         existing = connection.execute(
-            "SELECT id FROM users WHERE email = ?",
-            (admin_email,),
+            "SELECT id FROM users WHERE username = ?",
+            (admin_username,),
         ).fetchone()
         if existing is None:
             connection.execute(
                 """
-                INSERT INTO users (email, password_hash, display_name, is_admin, created_at)
+                INSERT INTO users (username, password_hash, display_name, is_admin, created_at)
                 VALUES (?, ?, ?, 1, ?)
                 """,
                 (
-                    admin_email,
+                    admin_username,
                     bcrypt.hashpw(admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
                     os.getenv("TAMANA_ADMIN_DISPLAY_NAME", "Administrator"),
                     datetime.now(timezone.utc).isoformat(),
@@ -194,7 +255,7 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         user_id = decode_access_token(credentials.credentials)
         with closing(connect()) as connection:
             user = connection.execute(
-                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                "SELECT id, username, display_name, is_admin, password_hash FROM users WHERE id = ?",
                 (user_id,),
             ).fetchone()
         if user is None:
@@ -209,13 +270,16 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     def user_response(row: sqlite3.Row) -> dict[str, Any]:
         return {
             "id": row["id"],
-            "email": row["email"],
+            "username": row["username"],
             "display_name": row["display_name"],
         }
 
-    def validated_email(value: Any) -> str:
-        if not isinstance(value, str) or not EMAIL_RE.match(value):
-            raise HTTPException(status_code=422, detail="A valid email address is required.")
+    def validated_username(value: Any) -> str:
+        if not isinstance(value, str) or not USERNAME_RE.fullmatch(value.strip()):
+            raise HTTPException(
+                status_code=422,
+                detail="Username must be 3-30 characters using only letters, numbers, or underscores.",
+            )
         return value.strip().lower()
 
     def validated_password(value: Any) -> str:
@@ -238,22 +302,22 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @application.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
     async def register_user(request: Request) -> dict[str, Any]:
         data = await read_json(request)
-        email = validated_email(data.get("email"))
+        username = validated_username(data.get("username"))
         password = validated_password(data.get("password"))
-        display_name = validated_display_name(data.get("display_name", email.split("@", 1)[0]))
+        display_name = validated_display_name(data.get("display_name", username))
 
         with closing(connect()) as connection:
-            existing = connection.execute("SELECT id FROM users WHERE email = ?", (email,)).fetchone()
+            existing = connection.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
             if existing is not None:
-                raise HTTPException(status_code=409, detail="An account with that email already exists.")
+                raise HTTPException(status_code=409, detail="That username is already taken.")
 
             cursor = connection.execute(
                 """
-                INSERT INTO users (email, password_hash, display_name, is_admin, created_at)
+                INSERT INTO users (username, password_hash, display_name, is_admin, created_at)
                 VALUES (?, ?, ?, 0, ?)
                 """,
                 (
-                    email,
+                    username,
                     bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8"),
                     display_name,
                     datetime.now(timezone.utc).isoformat(),
@@ -261,7 +325,7 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
             )
             connection.commit()
             user = connection.execute(
-                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                "SELECT id, username, display_name, is_admin, password_hash FROM users WHERE id = ?",
                 (cursor.lastrowid,),
             ).fetchone()
 
@@ -270,17 +334,17 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @application.post("/api/auth/login")
     async def login_user(request: Request) -> dict[str, Any]:
         data = await read_json(request)
-        email = validated_email(data.get("email"))
+        username = validated_username(data.get("username"))
         password = validated_password(data.get("password"))
 
         with closing(connect()) as connection:
             user = connection.execute(
-                "SELECT id, email, display_name, password_hash, is_admin FROM users WHERE email = ?",
-                (email,),
+                "SELECT id, username, display_name, password_hash, is_admin FROM users WHERE username = ?",
+                (username,),
             ).fetchone()
 
         if user is None or not bcrypt.checkpw(password.encode("utf-8"), user["password_hash"].encode("utf-8")):
-            raise HTTPException(status_code=401, detail="Invalid email or password.")
+            raise HTTPException(status_code=401, detail="Invalid username or password.")
 
         token = create_access_token(user["id"])
         return {"access_token": token, "token_type": "bearer"}
@@ -301,7 +365,7 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
             )
             connection.commit()
             user = connection.execute(
-                "SELECT id, email, display_name, is_admin, password_hash FROM users WHERE id = ?",
+                "SELECT id, username, display_name, is_admin, password_hash FROM users WHERE id = ?",
                 (current_user["id"],),
             ).fetchone()
         return user_response(user)
@@ -310,7 +374,7 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     def list_users(current_user: sqlite3.Row = Depends(get_admin_user)) -> list[dict[str, Any]]:
         with closing(connect()) as connection:
             rows = connection.execute(
-                "SELECT id, email, display_name, is_admin, password_hash FROM users ORDER BY id ASC"
+                "SELECT id, username, display_name, is_admin, password_hash FROM users ORDER BY id ASC"
             ).fetchall()
         return [user_response(row) for row in rows]
 

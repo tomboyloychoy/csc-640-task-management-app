@@ -23,7 +23,7 @@ description: Shared acceptance criteria for all ten planned APIs across Stage 1 
 
 - Use an empty, isolated test database; never use production data or `data/tamana.db`.
 - Register ordinary users through the API. Provision an admin only through a documented test fixture/bootstrap.
-- Use unique emails or reset the database per run. Create tasks through the API.
+- Use unique usernames or reset the database per run. Create tasks through the API.
 - Every test checks HTTP status **and** response body/content. Any failure exits nonzero.
 - `UserBearer` = valid user JWT; `AdminBearer` = valid administrator JWT.
 - Protected routes: test valid, missing, malformed, and expired tokens.
@@ -35,7 +35,8 @@ description: Shared acceptance criteria for all ten planned APIs across Stage 1 
 
 The README does not define account fields, profile fields, token lifetime, or admin provisioning. For repeatable acceptance tests, assume:
 
-- Registration/login fields: `email`, `password`; editable profile: `display_name`.
+- Registration/login fields: `username`, `password`; editable profile: `display_name`.
+- Usernames are 3-30 characters and contain only letters, numbers, or underscores; matching is case-insensitive.
 - Register `201`; login and profile read/update `200`.
 - Invalid input `422`; duplicate registration `409`.
 - Invalid credentials or missing/invalid/expired token `401`.
@@ -120,9 +121,9 @@ python -m pytest -q tests
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | Submit unique valid `email`, `password`, `display_name`. | `201`; account ID/email/display name; no plaintext password or hash. |
-| Invalid input | Submit malformed email or missing/blank password. | `422`; JSON `detail`; no account created. |
-| Duplicate account | Register the same email twice. | Second request `409`; JSON `detail`; only one account exists. |
+| Success | Submit unique valid `username`, `password`, `display_name`. | `201`; account ID/username/display name; no plaintext password or hash. |
+| Invalid input | Submit malformed username or missing/blank password. | `422`; JSON `detail`; no account created. |
+| Duplicate account | Register the same username twice, including different letter casing. | Second request `409`; JSON `detail`; only one account exists. |
 
 ---
 
@@ -131,9 +132,9 @@ python -m pytest -q tests
 | Case | Request | Expected |
 |---|---|---|
 | Success | Submit credentials for a registered account. | `200`; non-empty signed user token usable as `UserBearer`; no password/hash. |
-| Wrong password | Registered email with incorrect password. | `401`; JSON `detail`; no token. |
-| Unknown account | Credentials for unregistered email. | `401`; JSON `detail`; no token. |
-| Missing credentials | Omit email or password. | `422`; JSON `detail`. |
+| Wrong password | Registered username with incorrect password. | `401`; JSON `detail`; no token. |
+| Unknown account | Credentials for unregistered username. | `401`; JSON `detail`; no token. |
+| Missing credentials | Omit username or password. | `422`; JSON `detail`. |
 
 ---
 
@@ -141,7 +142,7 @@ python -m pytest -q tests
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | A registers/logs in and reads profile with A's valid token. | `200`; A's ID/email/display name; no password/hash. |
+| Success | A registers/logs in and reads profile with A's valid token. | `200`; A's ID/username/display name; no password/hash. |
 | Missing token | Request without authorization. | `401`; JSON `detail`. |
 | Invalid/expired token | Request with malformed token, then expired token. | Each `401`; JSON `detail`. |
 
@@ -151,7 +152,7 @@ python -m pytest -q tests
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | A patches `{"display_name":"A Updated"}`, then reads profile. | `200`; updated display name persists; A's ID/email remain; no password/hash. |
+| Success | A patches `{"display_name":"A Updated"}`, then reads profile. | `200`; updated display name persists; A's ID/username remain; no password/hash. |
 | Invalid input | A submits invalid or blank display name. | `422`; JSON `detail`; profile unchanged. |
 | Missing token | Submit valid update without authorization. | `401`; JSON `detail`; profile unchanged. |
 | Invalid/expired token | Submit with malformed token, then expired token. | Each `401`; JSON `detail`; profile unchanged. |
@@ -162,7 +163,7 @@ python -m pytest -q tests
 
 | Case | Request | Expected |
 |---|---|---|
-| Success | Provision test admin; register a regular user; admin lists users with valid admin token. | `200`; array includes regular user's ID/email; no password/hash fields. |
+| Success | Provision test admin; register a regular user; admin lists users with valid admin token. | `200`; array includes regular user's ID/username; no password/hash fields. |
 | Missing token | Request without authorization. | `401`; JSON `detail`. |
 | Invalid/expired token | Request with malformed token, then expired token. | Each `401`; JSON `detail`. |
 | Insufficient role | Request with valid regular user's token. | `403`; JSON `detail`; no user list returned. |
