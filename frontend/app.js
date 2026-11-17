@@ -1,10 +1,16 @@
+const tokenStorageKey = "tamana.access_token";
+
 const state = {
   status: "all",
   tag: null,
   tasks: [],
   tags: [],
+  tagSuggestionIndex: -1,
   editingTask: null,
   toastTimer: null,
+  token: localStorage.getItem(tokenStorageKey),
+  user: null,
+  authMode: "login",
 };
 
 const isGitHubPages = location.hostname.endsWith(".github.io")
@@ -13,6 +19,17 @@ const storageKey = "tamana.tasks.v1";
 const defaultTags = ["School", "Work", "House", "Personal", "Other"];
 
 const elements = {
+  appShell: document.querySelector("#app-shell"),
+  authScreen: document.querySelector("#auth-screen"),
+  authForm: document.querySelector("#auth-form"),
+  authNameLabel: document.querySelector("#auth-name-label"),
+  authName: document.querySelector("#auth-display-name"),
+  authUsername: document.querySelector("#auth-username"),
+  authPassword: document.querySelector("#auth-password"),
+  authError: document.querySelector("#auth-error"),
+  authSubmit: document.querySelector("#auth-submit"),
+  authTitle: document.querySelector("#auth-title"),
+  authCopy: document.querySelector("#auth-copy"),
   taskList: document.querySelector("#task-list"),
   emptyState: document.querySelector("#empty-state"),
   emptyTitle: document.querySelector("#empty-title"),
@@ -20,7 +37,8 @@ const elements = {
   search: document.querySelector("#task-search"),
   sort: document.querySelector("#sort-select"),
   tagNav: document.querySelector("#tag-nav"),
-  tagOptions: document.querySelector("#tag-options"),
+  tagInput: document.querySelector("#task-tag"),
+  tagSuggestions: document.querySelector("#tag-suggestions"),
   dialog: document.querySelector("#task-dialog"),
   form: document.querySelector("#task-form"),
   formError: document.querySelector("#form-error"),
@@ -109,9 +127,12 @@ function staticApi(path, options = {}) {
 
 async function api(path, options = {}) {
   if (isGitHubPages) return staticApi(path, options);
+  const headers = new Headers(options.headers ?? {});
+  headers.set("Content-Type", "application/json");
+  if (state.token) headers.set("Authorization", `Bearer ${state.token}`);
   const response = await fetch(path, {
     ...options,
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers,
   });
   if (!response.ok) {
     let message = `Request failed (${response.status}).`;
@@ -121,9 +142,97 @@ async function api(path, options = {}) {
     } catch {
       // Keep the HTTP status message when the server does not return JSON.
     }
+    if (response.status === 401 && state.token && !path.startsWith("/api/auth/")) {
+      clearSession();
+      showAuth("Your session has expired. Please sign in again.");
+    }
     throw new Error(message);
   }
   return response.status === 204 ? null : response.json();
+}
+
+function clearSession() {
+  state.token = null;
+  state.user = null;
+  localStorage.removeItem(tokenStorageKey);
+}
+
+function showAuth(message = "") {
+  elements.appShell.hidden = true;
+  elements.authScreen.hidden = false;
+  elements.authError.textContent = message;
+  elements.authUsername.focus();
+}
+
+function showWorkspace() {
+  if (!isGitHubPages && !state.token) {
+    showAuth("Please sign in to continue.");
+    return;
+  }
+  elements.authScreen.hidden = true;
+  elements.appShell.hidden = false;
+  if (state.user) {
+    document.querySelector("#user-name").textContent = state.user.display_name;
+    document.querySelector("#user-username").textContent = state.user.username;
+    document.querySelector("#user-avatar").textContent = state.user.display_name.charAt(0).toUpperCase();
+  }
+}
+
+function setAuthMode(mode) {
+  state.authMode = mode;
+  const registering = mode === "register";
+  elements.authTitle.innerHTML = registering
+    ? `Create your account<span class="title-period">.</span>`
+    : `Welcome back<span class="title-period">.</span>`;
+  elements.authCopy.textContent = registering
+    ? "A little space to organize what matters."
+    : "Sign in to pick up where you left off.";
+  elements.authNameLabel.hidden = !registering;
+  elements.authName.hidden = !registering;
+  elements.authName.required = registering;
+  elements.authPassword.autocomplete = registering ? "new-password" : "current-password";
+  elements.authSubmit.innerHTML = registering ? "Create account <span>→</span>" : "Sign in <span>→</span>";
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    const active = button.dataset.authMode === mode;
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-pressed", String(active));
+  });
+  elements.authError.textContent = "";
+}
+
+async function submitAuth(event) {
+  event.preventDefault();
+  elements.authSubmit.disabled = true;
+  elements.authError.textContent = "";
+  const credentials = {
+    username: elements.authUsername.value.trim(),
+    password: elements.authPassword.value,
+  };
+  try {
+    if (state.authMode === "register") {
+      await api("/api/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          ...credentials,
+          display_name: elements.authName.value.trim(),
+        }),
+      });
+    }
+    const result = await api("/api/auth/login", {
+      method: "POST",
+      body: JSON.stringify(credentials),
+    });
+    state.token = result.access_token;
+    localStorage.setItem(tokenStorageKey, state.token);
+    state.user = await api("/api/users/me");
+    await loadTags();
+    await loadTasks();
+    showWorkspace();
+  } catch (error) {
+    elements.authError.textContent = error.message;
+  } finally {
+    elements.authSubmit.disabled = false;
+  }
 }
 
 function setBusy(isBusy) {
@@ -230,7 +339,54 @@ async function loadTags() {
       <span class="tag-dot" data-tag-color="${tagColor(tag)}"></span>
       <span>${escapeHtml(tag)}</span>
     </button>`).join("");
-  elements.tagOptions.innerHTML = state.tags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join("");
+}
+
+function closeTagSuggestions() {
+  elements.tagSuggestions.hidden = true;
+  elements.tagInput.setAttribute("aria-expanded", "false");
+  elements.tagInput.removeAttribute("aria-activedescendant");
+  state.tagSuggestionIndex = -1;
+}
+
+function renderTagSuggestions() {
+  const query = elements.tagInput.value.trim();
+  const normalizedQuery = query.toLocaleLowerCase();
+  const matchingTags = state.tags.filter((tag) =>
+    tag.toLocaleLowerCase().includes(normalizedQuery));
+  const hasExactMatch = state.tags.some((tag) => tag.toLocaleLowerCase() === normalizedQuery);
+  const suggestions = matchingTags.map((tag) => ({ value: tag, label: tag }));
+  if (query && !hasExactMatch) {
+    suggestions.push({ value: query, label: `Use "${query}"` });
+  }
+
+  elements.tagSuggestions.innerHTML = suggestions.length
+    ? suggestions.map((suggestion, index) => `
+      <button class="tag-suggestion" id="tag-suggestion-${index}" type="button" role="option"
+        aria-selected="false" data-tag-value="${escapeHtml(suggestion.value)}">${escapeHtml(suggestion.label)}</button>`).join("")
+    : `<div class="tag-suggestion-empty">Type a tag name to use it.</div>`;
+  elements.tagSuggestions.hidden = false;
+  elements.tagInput.setAttribute("aria-expanded", "true");
+  state.tagSuggestionIndex = -1;
+}
+
+function setActiveTagSuggestion(index) {
+  const suggestions = [...elements.tagSuggestions.querySelectorAll(".tag-suggestion")];
+  if (suggestions.length === 0) return;
+
+  state.tagSuggestionIndex = (index + suggestions.length) % suggestions.length;
+  suggestions.forEach((suggestion, suggestionIndex) => {
+    const active = suggestionIndex === state.tagSuggestionIndex;
+    suggestion.setAttribute("aria-selected", String(active));
+    if (active) {
+      elements.tagInput.setAttribute("aria-activedescendant", suggestion.id);
+      suggestion.scrollIntoView({ block: "nearest" });
+    }
+  });
+}
+
+function selectTagSuggestion(suggestion) {
+  elements.tagInput.value = suggestion.dataset.tagValue;
+  closeTagSuggestions();
 }
 
 function updateViewTitle() {
@@ -241,7 +397,12 @@ function updateViewTitle() {
 }
 
 function openDialog(task = null, initialTag = "") {
+  if (!isGitHubPages && !state.token) {
+    showAuth();
+    return;
+  }
   state.editingTask = task;
+  closeTagSuggestions();
   elements.form.reset();
   elements.formError.textContent = "";
   document.querySelector("#dialog-title").textContent = task ? "Edit task" : "Add a task";
@@ -322,6 +483,19 @@ async function deleteTask(task) {
 }
 
 function bindEvents() {
+  document.querySelectorAll("[data-auth-mode]").forEach((button) => {
+    button.addEventListener("click", () => setAuthMode(button.dataset.authMode));
+  });
+  elements.authForm.addEventListener("submit", submitAuth);
+  const signOutButton = document.querySelector("#sign-out-button");
+  if (isGitHubPages) signOutButton.hidden = true;
+  signOutButton.addEventListener("click", () => {
+    if (isGitHubPages) return;
+    clearSession();
+    elements.authForm.reset();
+    setAuthMode("login");
+    showAuth();
+  });
   document.querySelectorAll(".primary-nav .nav-item").forEach((button) => {
     button.addEventListener("click", () => setView(button.dataset.status));
   });
@@ -335,6 +509,36 @@ function bindEvents() {
     const tag = window.prompt("Name your new tag:");
     if (tag?.trim()) openDialog(null, tag.trim().slice(0, 32));
   });
+  elements.tagInput.addEventListener("focus", renderTagSuggestions);
+  elements.tagInput.addEventListener("input", renderTagSuggestions);
+  elements.tagInput.addEventListener("blur", () => {
+    setTimeout(closeTagSuggestions, 120);
+  });
+  elements.tagInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (elements.tagSuggestions.hidden) renderTagSuggestions();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const suggestionCount = elements.tagSuggestions.querySelectorAll(".tag-suggestion").length;
+      const nextIndex = state.tagSuggestionIndex < 0
+        ? direction === 1 ? 0 : suggestionCount - 1
+        : state.tagSuggestionIndex + direction;
+      setActiveTagSuggestion(nextIndex);
+    } else if (event.key === "Enter" && !elements.tagSuggestions.hidden && state.tagSuggestionIndex >= 0) {
+      event.preventDefault();
+      const suggestion = elements.tagSuggestions.querySelectorAll(".tag-suggestion")[state.tagSuggestionIndex];
+      if (suggestion) selectTagSuggestion(suggestion);
+    } else if (event.key === "Escape" && !elements.tagSuggestions.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTagSuggestions();
+    }
+  });
+  elements.tagSuggestions.addEventListener("click", (event) => {
+    const suggestion = event.target.closest("[data-tag-value]");
+    if (suggestion) selectTagSuggestion(suggestion);
+  });
+  elements.dialog.addEventListener("close", closeTagSuggestions);
   document.querySelector("#close-dialog").addEventListener("click", () => elements.dialog.close());
   document.querySelector("#cancel-dialog").addEventListener("click", () => elements.dialog.close());
   elements.form.addEventListener("submit", saveTask);
@@ -378,10 +582,23 @@ function setDateLabels() {
 async function initialize() {
   bindEvents();
   setDateLabels();
+  if (!isGitHubPages && !state.token) {
+    setAuthMode(location.hash === "#register" ? "register" : "login");
+    showAuth();
+    return;
+  }
   try {
+    if (!isGitHubPages) state.user = await api("/api/users/me");
     await loadTags();
     await loadTasks();
+    showWorkspace();
   } catch (error) {
+    if (!isGitHubPages) {
+      setAuthMode("login");
+      showAuth(state.token ? error.message : "Please sign in to continue.");
+      return;
+    }
+    showWorkspace();
     showToast(`Tamana couldn’t start: ${error.message}`);
     elements.emptyState.hidden = false;
     elements.emptyTitle.textContent = "Tamana couldn’t start.";
