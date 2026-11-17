@@ -9,8 +9,8 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="./styles.css?v=auth-flow-3">
-    <script src="./app.js?v=username-auth-1" defer></script>
+    <link rel="stylesheet" href="./styles.css?v=tag-picker-1">
+    <script src="./app.js?v=tag-picker-2" defer></script>
   </head>
   <body>
     <section class="auth-screen" id="auth-screen" aria-labelledby="auth-title" hidden>
@@ -169,8 +169,10 @@
         <div class="field-row">
           <div class="field-column">
             <label class="field-label" for="task-tag">Tag</label>
-            <input class="text-field" id="task-tag" name="tag" list="tag-options" maxlength="32" placeholder="e.g. School, Work, House">
-            <datalist id="tag-options"></datalist>
+            <div class="tag-picker">
+              <input class="text-field" id="task-tag" name="tag" maxlength="32" placeholder="e.g. School, Work, House" role="combobox" aria-autocomplete="list" aria-haspopup="listbox" aria-controls="tag-suggestions" aria-expanded="false" autocomplete="off">
+              <div class="tag-suggestions" id="tag-suggestions" role="listbox" aria-label="Task tags" hidden></div>
+            </div>
           </div>
           <div class="field-column">
             <label class="field-label" for="task-due-date">Due date <span>optional</span></label>

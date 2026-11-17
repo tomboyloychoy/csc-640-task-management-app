@@ -5,6 +5,7 @@ const state = {
   tag: null,
   tasks: [],
   tags: [],
+  tagSuggestionIndex: -1,
   editingTask: null,
   toastTimer: null,
   token: localStorage.getItem(tokenStorageKey),
@@ -36,7 +37,8 @@ const elements = {
   search: document.querySelector("#task-search"),
   sort: document.querySelector("#sort-select"),
   tagNav: document.querySelector("#tag-nav"),
-  tagOptions: document.querySelector("#tag-options"),
+  tagInput: document.querySelector("#task-tag"),
+  tagSuggestions: document.querySelector("#tag-suggestions"),
   dialog: document.querySelector("#task-dialog"),
   form: document.querySelector("#task-form"),
   formError: document.querySelector("#form-error"),
@@ -337,7 +339,54 @@ async function loadTags() {
       <span class="tag-dot" data-tag-color="${tagColor(tag)}"></span>
       <span>${escapeHtml(tag)}</span>
     </button>`).join("");
-  elements.tagOptions.innerHTML = state.tags.map((tag) => `<option value="${escapeHtml(tag)}"></option>`).join("");
+}
+
+function closeTagSuggestions() {
+  elements.tagSuggestions.hidden = true;
+  elements.tagInput.setAttribute("aria-expanded", "false");
+  elements.tagInput.removeAttribute("aria-activedescendant");
+  state.tagSuggestionIndex = -1;
+}
+
+function renderTagSuggestions() {
+  const query = elements.tagInput.value.trim();
+  const normalizedQuery = query.toLocaleLowerCase();
+  const matchingTags = state.tags.filter((tag) =>
+    tag.toLocaleLowerCase().includes(normalizedQuery));
+  const hasExactMatch = state.tags.some((tag) => tag.toLocaleLowerCase() === normalizedQuery);
+  const suggestions = matchingTags.map((tag) => ({ value: tag, label: tag }));
+  if (query && !hasExactMatch) {
+    suggestions.push({ value: query, label: `Use "${query}"` });
+  }
+
+  elements.tagSuggestions.innerHTML = suggestions.length
+    ? suggestions.map((suggestion, index) => `
+      <button class="tag-suggestion" id="tag-suggestion-${index}" type="button" role="option"
+        aria-selected="false" data-tag-value="${escapeHtml(suggestion.value)}">${escapeHtml(suggestion.label)}</button>`).join("")
+    : `<div class="tag-suggestion-empty">Type a tag name to use it.</div>`;
+  elements.tagSuggestions.hidden = false;
+  elements.tagInput.setAttribute("aria-expanded", "true");
+  state.tagSuggestionIndex = -1;
+}
+
+function setActiveTagSuggestion(index) {
+  const suggestions = [...elements.tagSuggestions.querySelectorAll(".tag-suggestion")];
+  if (suggestions.length === 0) return;
+
+  state.tagSuggestionIndex = (index + suggestions.length) % suggestions.length;
+  suggestions.forEach((suggestion, suggestionIndex) => {
+    const active = suggestionIndex === state.tagSuggestionIndex;
+    suggestion.setAttribute("aria-selected", String(active));
+    if (active) {
+      elements.tagInput.setAttribute("aria-activedescendant", suggestion.id);
+      suggestion.scrollIntoView({ block: "nearest" });
+    }
+  });
+}
+
+function selectTagSuggestion(suggestion) {
+  elements.tagInput.value = suggestion.dataset.tagValue;
+  closeTagSuggestions();
 }
 
 function updateViewTitle() {
@@ -353,6 +402,7 @@ function openDialog(task = null, initialTag = "") {
     return;
   }
   state.editingTask = task;
+  closeTagSuggestions();
   elements.form.reset();
   elements.formError.textContent = "";
   document.querySelector("#dialog-title").textContent = task ? "Edit task" : "Add a task";
@@ -459,6 +509,36 @@ function bindEvents() {
     const tag = window.prompt("Name your new tag:");
     if (tag?.trim()) openDialog(null, tag.trim().slice(0, 32));
   });
+  elements.tagInput.addEventListener("focus", renderTagSuggestions);
+  elements.tagInput.addEventListener("input", renderTagSuggestions);
+  elements.tagInput.addEventListener("blur", () => {
+    setTimeout(closeTagSuggestions, 120);
+  });
+  elements.tagInput.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      if (elements.tagSuggestions.hidden) renderTagSuggestions();
+      const direction = event.key === "ArrowDown" ? 1 : -1;
+      const suggestionCount = elements.tagSuggestions.querySelectorAll(".tag-suggestion").length;
+      const nextIndex = state.tagSuggestionIndex < 0
+        ? direction === 1 ? 0 : suggestionCount - 1
+        : state.tagSuggestionIndex + direction;
+      setActiveTagSuggestion(nextIndex);
+    } else if (event.key === "Enter" && !elements.tagSuggestions.hidden && state.tagSuggestionIndex >= 0) {
+      event.preventDefault();
+      const suggestion = elements.tagSuggestions.querySelectorAll(".tag-suggestion")[state.tagSuggestionIndex];
+      if (suggestion) selectTagSuggestion(suggestion);
+    } else if (event.key === "Escape" && !elements.tagSuggestions.hidden) {
+      event.preventDefault();
+      event.stopPropagation();
+      closeTagSuggestions();
+    }
+  });
+  elements.tagSuggestions.addEventListener("click", (event) => {
+    const suggestion = event.target.closest("[data-tag-value]");
+    if (suggestion) selectTagSuggestion(suggestion);
+  });
+  elements.dialog.addEventListener("close", closeTagSuggestions);
   document.querySelector("#close-dialog").addEventListener("click", () => elements.dialog.close());
   document.querySelector("#cancel-dialog").addEventListener("click", () => elements.dialog.close());
   elements.form.addEventListener("submit", saveTask);
