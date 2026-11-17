@@ -19,10 +19,31 @@ Python 3.10 or newer is required.
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python -m uvicorn app.main:app --reload
+if (-not (Test-Path .env)) { Copy-Item .env.example .env }
+python -m uvicorn app.main:app --reload --env-file .env
 ```
 
-Open <http://127.0.0.1:8000>. The database is created automatically when the app starts. To use the `pytest` suite, install `requirements-dev.txt` and run `python -m pytest`.
+Open <http://127.0.0.1:8000>. The database is created automatically when the app starts. `.env` contains local settings and is ignored by Git; use `.env.example` as the shareable template. The local `.env` provisions a development admin account; change its credentials before use outside your local machine. To use the `pytest` suite, install `requirements-dev.txt` and run `python -m pytest`.
+
+## API documentation
+
+Open <http://127.0.0.1:8000/docs> for the standard Swagger UI API reference. It shows endpoint details and request examples, but **Try it out** and **Authorize** are disabled so the page is informational only. Use `python -m pytest -q` or an API client to send requests.
+
+## Test with Postman
+
+With the local app running, use `http://127.0.0.1:8000` as the base URL:
+
+1. Send **POST** `/api/auth/register` with **Body → raw → JSON**:
+   ```json
+   {"username":"postman_user","password":"Secret123!","display_name":"Postman User"}
+   ```
+   Use a new username if this one is already registered.
+2. Send **POST** `/api/auth/login` with:
+   ```json
+   {"username":"postman_user","password":"Secret123!"}
+   ```
+   Copy `access_token` from the response.
+3. For a protected request, open **Authorization**, choose **Bearer Token**, and paste the token. Try **GET** `/api/users/me` or **GET** `/api/tasks`.
 
 ## GitHub Pages demo
 
@@ -47,7 +68,13 @@ Registration and login are public endpoints; task and profile routes require an 
 
 In the local browser app, visitors without a valid session are shown the sign-in/register screen before they can access tasks. After signing in, the app keeps the JWT in browser storage and sends it with protected API requests; signing out clears it. The GitHub Pages demo remains unauthenticated and stores tasks only in browser-local storage.
 
-Configure `TAMANA_SECRET_KEY` to a strong, private value and set `TAMANA_TOKEN_TTL_MINUTES` for the deployment. The built-in signing key and fallback admin password are development defaults only; do not use them in a deployed environment. When an older database is upgraded, existing account usernames are derived from the part of the email address before `@`; user IDs and task ownership are preserved. Existing tasks from before authentication may still have no owner and are not automatically assigned to a user.
+Generate a strong secret key locally with Python's cryptographically secure `secrets` module:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Copy the output into `.env` as the value of `TAMANA_SECRET_KEY`. Keep it private and out of Git; do not use a website to generate or share it. Changing the key invalidates existing login tokens, so users must sign in again. Set `TAMANA_TOKEN_TTL_MINUTES` as needed. The built-in signing key and fallback admin password are development defaults only; do not use them in a deployed environment. When an older database is upgraded, existing account usernames are derived from the part of the email address before `@`; user IDs and task ownership are preserved. Existing tasks from before authentication may still have no owner and are not automatically assigned to a user.
 
 | # | Method | Path | Route implementation | Authorization |
 |---|---|---|---|---|

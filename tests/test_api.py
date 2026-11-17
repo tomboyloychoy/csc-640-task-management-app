@@ -8,6 +8,32 @@ from fastapi.testclient import TestClient
 from app.main import create_app
 
 
+def test_api_docs_include_json_request_examples(tmp_path):
+    schema = create_app(tmp_path / "schema.db").openapi()
+    request_paths = {
+        "/api/auth/register": "post",
+        "/api/auth/login": "post",
+        "/api/users/me": "patch",
+        "/api/tasks": "post",
+        "/api/tasks/{task_id}": "put",
+    }
+
+    for path, method in request_paths.items():
+        request_body = schema["paths"][path][method]["requestBody"]
+        assert request_body["content"]["application/json"]["examples"]
+
+
+def test_docs_page_uses_read_only_swagger_ui(tmp_path):
+    with TestClient(create_app(tmp_path / "docs.db")) as client:
+        response = client.get("/docs")
+
+    assert response.status_code == 200
+    assert "swagger-ui" in response.text
+    assert "supportedSubmitMethods" in response.text
+    assert "[]" in response.text
+    assert ".authorization__btn" in response.text
+
+
 def test_legacy_database_migrates_user_id_and_preserves_tasks(tmp_path):
     db_path = tmp_path / "legacy.db"
     with sqlite3.connect(db_path) as connection:

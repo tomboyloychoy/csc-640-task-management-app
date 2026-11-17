@@ -10,7 +10,9 @@ from typing import Any
 
 import bcrypt
 import jwt
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Body, Depends, FastAPI, HTTPException, status
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from jwt import ExpiredSignatureError, InvalidTokenError
@@ -171,22 +173,34 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         initialize_database()
         yield
 
-    application = FastAPI(title="Tamana", version="1.0.0", lifespan=lifespan)
+    application = FastAPI(
+        title="Tamana",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url=None,
+        redoc_url=None,
+    )
 
-    async def read_json(request: Request) -> dict[str, Any]:
-        try:
-            data = await request.json()
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Request body must be valid JSON.",
-            ) from exc
-        if not isinstance(data, dict):
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="Request body must be a JSON object.",
-            )
-        return data
+    @application.get("/docs", include_in_schema=False)
+    def api_docs() -> HTMLResponse:
+        page = get_swagger_ui_html(
+            openapi_url=application.openapi_url,
+            title=f"{application.title} - API docs",
+            swagger_ui_parameters={"supportedSubmitMethods": []},
+        )
+        html = page.body.decode("utf-8").replace(
+            "</head>",
+            """
+            <style>
+              .swagger-ui .auth-wrapper,
+              .swagger-ui .authorization__btn {
+                display: none !important;
+              }
+            </style>
+            </head>
+            """,
+        )
+        return HTMLResponse(html)
 
     def validated_task(data: dict[str, Any]) -> tuple[str, str, str, str | None, str]:
         title = data.get("title")
@@ -300,8 +314,21 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return display_name
 
     @application.post("/api/auth/register", status_code=status.HTTP_201_CREATED)
-    async def register_user(request: Request) -> dict[str, Any]:
-        data = await read_json(request)
+    async def register_user(
+        data: dict[str, Any] = Body(
+            ...,
+            openapi_examples={
+                "new_user": {
+                    "summary": "Register with a username",
+                    "value": {
+                        "username": "student01",
+                        "password": "Secret123!",
+                        "display_name": "Student",
+                    },
+                }
+            },
+        ),
+    ) -> dict[str, Any]:
         username = validated_username(data.get("username"))
         password = validated_password(data.get("password"))
         display_name = validated_display_name(data.get("display_name", username))
@@ -332,8 +359,17 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return user_response(user)
 
     @application.post("/api/auth/login")
-    async def login_user(request: Request) -> dict[str, Any]:
-        data = await read_json(request)
+    async def login_user(
+        data: dict[str, Any] = Body(
+            ...,
+            openapi_examples={
+                "login": {
+                    "summary": "Log in with a username",
+                    "value": {"username": "student01", "password": "Secret123!"},
+                }
+            },
+        ),
+    ) -> dict[str, Any]:
         username = validated_username(data.get("username"))
         password = validated_password(data.get("password"))
 
@@ -354,8 +390,18 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return user_response(current_user)
 
     @application.patch("/api/users/me")
-    async def update_user(request: Request, current_user: sqlite3.Row = Depends(get_current_user)) -> dict[str, Any]:
-        data = await read_json(request)
+    async def update_user(
+        data: dict[str, Any] = Body(
+            ...,
+            openapi_examples={
+                "profile": {
+                    "summary": "Update display name",
+                    "value": {"display_name": "Student Updated"},
+                }
+            },
+        ),
+        current_user: sqlite3.Row = Depends(get_current_user),
+    ) -> dict[str, Any]:
         display_name = validated_display_name(data.get("display_name"))
 
         with closing(connect()) as connection:
@@ -432,8 +478,25 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
         return tags
 
     @application.post("/api/tasks", status_code=status.HTTP_201_CREATED)
-    async def create_task(request: Request, current_user: sqlite3.Row = Depends(get_current_user)) -> dict[str, Any]:
-        title, description, tag, due_date, priority = validated_task(await read_json(request))
+    async def create_task(
+        data: dict[str, Any] = Body(
+            ...,
+            openapi_examples={
+                "task": {
+                    "summary": "Create a task",
+                    "value": {
+                        "title": "Test the API",
+                        "description": "Created in Swagger UI",
+                        "tag": "School",
+                        "due_date": "2026-11-20",
+                        "priority": "normal",
+                    },
+                }
+            },
+        ),
+        current_user: sqlite3.Row = Depends(get_current_user),
+    ) -> dict[str, Any]:
+        title, description, tag, due_date, priority = validated_task(data)
         created_at = datetime.now(timezone.utc).isoformat()
         with closing(connect()) as connection:
             cursor = connection.execute(
@@ -453,10 +516,24 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
     @application.put("/api/tasks/{task_id}")
     async def update_task(
         task_id: int,
-        request: Request,
+        data: dict[str, Any] = Body(
+            ...,
+            openapi_examples={
+                "updated_task": {
+                    "summary": "Update a task",
+                    "value": {
+                        "title": "Test the API",
+                        "description": "Updated in Swagger UI",
+                        "tag": "School",
+                        "due_date": "2026-11-20",
+                        "priority": "normal",
+                        "completed": True,
+                    },
+                }
+            },
+        ),
         current_user: sqlite3.Row = Depends(get_current_user),
     ) -> dict[str, Any]:
-        data = await read_json(request)
         title, description, tag, due_date, priority = validated_task(data)
         completed = data.get("completed", False)
         if not isinstance(completed, bool):
