@@ -17,8 +17,8 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from jwt import ExpiredSignatureError, InvalidTokenError
 
-ROOT_DIR = Path(__file__).resolve().parent.parent
-FRONTEND_DIR = ROOT_DIR / "frontend"
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+FRONTEND_DIR = REPOSITORY_ROOT / "code" / "frontend"
 DEFAULT_TAGS = ("School", "Work", "House", "Personal", "Other")
 PRIORITIES = {"low", "normal", "high"}
 SECRET_KEY = os.getenv("TAMANA_SECRET_KEY", "tamana-dev-secret-key")
@@ -29,7 +29,7 @@ security = HTTPBearer(auto_error=False)
 
 
 def create_app(database_path: Path | str | None = None) -> FastAPI:
-    db_path = Path(database_path) if database_path else ROOT_DIR / "data" / "tamana.db"
+    db_path = Path(database_path) if database_path else REPOSITORY_ROOT / "data" / "tamana.db"
 
     def connect() -> sqlite3.Connection:
         db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -201,6 +201,11 @@ def create_app(database_path: Path | str | None = None) -> FastAPI:
             """,
         )
         return HTMLResponse(html)
+
+    @application.get("/test-page", include_in_schema=False)
+    def browser_test_page() -> HTMLResponse:
+        page = REPOSITORY_ROOT / "tests" / "test_page.html"
+        return HTMLResponse(page.read_text(encoding="utf-8"))
 
     def validated_task(data: dict[str, Any]) -> tuple[str, str, str, str | None, str]:
         title = data.get("title")

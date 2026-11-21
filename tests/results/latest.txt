@@ -1,0 +1,11 @@
+Tamana test result
+==================
+
+Date: 2026-11-21
+Command: python -m pytest -q
+Revision: working tree
+
+Result: 20 passed, 0 failed, 1 warning
+
+Warning:
+- StarletteDeprecationWarning: Using httpx with starlette.testclient is deprecated; install httpx2.

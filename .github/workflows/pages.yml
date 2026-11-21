@@ -25,22 +25,15 @@ jobs:
         uses: actions/checkout@v4
       - name: Set up Pages
         uses: actions/configure-pages@v5
-      - name: Set up Hugo
-        uses: peaceiris/actions-hugo@v3
-        with:
-          hugo-version: "0.146.0"
-          extended: false
-      - name: Build documentation
-        working-directory: docs
-        run: hugo --destination ../_site/docs --minify
-      - name: Verify documentation output
-        run: |
-          test -s _site/docs/index.html
-          test -s _site/docs/api/tasks/index.html
-      - name: Add app to site root
+      - name: Add app and API documentation to site
         run: |
           mkdir -p _site
-          cp -R frontend/. _site/
+          cp -R code/frontend/. _site/
+          mkdir -p _site/docs
+          cp -R docs/. _site/docs/
+          test -s _site/docs/README.md
+          test -s _site/docs/api-documentation.md
+          test -s _site/docs/api-documentation.pdf
           touch _site/.nojekyll
       - name: Upload static site
         uses: actions/upload-pages-artifact@v3

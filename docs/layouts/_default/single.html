@@ -1,8 +1,0 @@
-{{ define "main" }}
-  <article class="document">
-    <p class="eyebrow">TAMANA DOCUMENTATION</p>
-    <h1>{{ .Title }}</h1>
-    {{ with .Description }}<p class="lead">{{ . }}</p>{{ end }}
-    <div class="prose">{{ .Content }}</div>
-  </article>
-{{ end }}

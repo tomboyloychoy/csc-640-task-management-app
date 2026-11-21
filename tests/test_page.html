@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Tamana API Browser Test</title>
+    <style>
+      body { max-width: 900px; margin: 40px auto; padding: 0 20px; font-family: Arial, sans-serif; color: #17233d; }
+      button { padding: 10px 16px; margin-right: 8px; }
+      input { margin: 4px 8px 12px 0; padding: 8px; }
+      #results { list-style: none; padding: 0; }
+      #results li { margin: 8px 0; padding: 12px; border-radius: 6px; background: #f1f4f8; }
+      .pass { border-left: 6px solid #208a50; }
+      .fail { border-left: 6px solid #c43d3d; }
+      pre { white-space: pre-wrap; word-break: break-word; }
+    </style>
+  </head>
+  <body>
+    <h1>Tamana API Browser Test</h1>
+    <p>Calls all ten Stage 1 API endpoints and displays success/error results.</p>
+    <label>Admin username <input id="admin-username" placeholder="from .env"></label>
+    <label>Admin password <input id="admin-password" type="password"></label>
+    <button id="run" type="button">Run endpoint tests</button>
+    <button id="clear" type="button">Clear results</button>
+    <ol id="results"></ol>
+
+    <script>
+      const results = document.querySelector("#results");
+
+      function report(name, ok, detail) {
+        const item = document.createElement("li");
+        item.className = ok ? "pass" : "fail";
+        item.innerHTML = `<strong>${name}: ${ok ? "PASS" : "FAIL"}</strong><pre></pre>`;
+        item.querySelector("pre").textContent =
+          typeof detail === "string" ? detail : JSON.stringify(detail, null, 2);
+        results.appendChild(item);
+      }
+
+      async function request(method, path, body, headers = {}) {
+        const options = {
+          method,
+          headers: { "Content-Type": "application/json", ...headers }
+        };
+        if (body !== undefined) options.body = JSON.stringify(body);
+        const response = await fetch(path, options);
+        let data = null;
+        if (response.status !== 204) {
+          data = await response.json().catch(() => null);
+        }
+        return { status: response.status, data };
+      }
+
+      async function runTests() {
+        document.querySelector("#run").disabled = true;
+        results.replaceChildren();
+        const username = `browser${Date.now()}`;
+
+        try {
+          const registration = await request("POST", "/api/auth/register", {
+            username,
+            password: "Secret123!",
+            display_name: "Browser User"
+          });
+          report("1. POST /api/auth/register", registration.status === 201, registration);
+
+          const login = await request("POST", "/api/auth/login", {
+            username,
+            password: "Secret123!"
+          });
+          const loginOk = login.status === 200 && Boolean(login.data?.access_token);
+          report("2. POST /api/auth/login", loginOk, login);
+          if (!loginOk) throw new Error("Login did not return a bearer token.");
+
+          const userHeaders = { Authorization: `Bearer ${login.data.access_token}` };
+
+          const profile = await request("GET", "/api/users/me", undefined, userHeaders);
+          report("3. GET /api/users/me", profile.status === 200, profile);
+
+          const profileUpdate = await request(
+            "PATCH",
+            "/api/users/me",
+            { display_name: "Browser Updated" },
+            userHeaders
+          );
+          report(
+            "4. PATCH /api/users/me",
+            profileUpdate.status === 200 &&
+              profileUpdate.data.display_name === "Browser Updated",
+            profileUpdate
+          );
+
+          const task = await request("POST", "/api/tasks", {
+            title: "Browser endpoint test",
+            description: "Created by test_page.html",
+            tag: "Research",
+            due_date: "2026-12-31",
+            priority: "high"
+          }, userHeaders);
+          const taskOk = task.status === 201 && Boolean(task.data?.id);
+          report("5. POST /api/tasks", taskOk, task);
+          if (!taskOk) throw new Error("Task creation did not return an ID.");
+
+          const taskUpdate = await request("PUT", `/api/tasks/${task.data.id}`, {
+            ...task.data,
+            title: "Browser endpoint test updated",
+            completed: true
+          }, userHeaders);
+          report(
+            "6. PUT /api/tasks/{task_id}",
+            taskUpdate.status === 200 && taskUpdate.data.completed === true,
+            taskUpdate
+          );
+
+          const taskList = await request("GET", "/api/tasks", undefined, userHeaders);
+          report(
+            "7. GET /api/tasks",
+            taskList.status === 200 && Array.isArray(taskList.data),
+            taskList
+          );
+
+          const tags = await request("GET", "/api/tags", undefined, userHeaders);
+          report(
+            "8. GET /api/tags",
+            tags.status === 200 && Array.isArray(tags.data),
+            tags
+          );
+
+          const deletion = await request(
+            "DELETE",
+            `/api/tasks/${task.data.id}`,
+            undefined,
+            userHeaders
+          );
+          report("9. DELETE /api/tasks/{task_id}", deletion.status === 204, deletion);
+
+          const regularAdmin = await request(
+            "GET",
+            "/api/admin/users",
+            undefined,
+            userHeaders
+          );
+          report(
+            "10. GET /api/admin/users (regular-user rejection)",
+            regularAdmin.status === 403,
+            regularAdmin
+          );
+
+          const adminUsername = document.querySelector("#admin-username").value.trim();
+          const adminPassword = document.querySelector("#admin-password").value;
+          if (adminUsername && adminPassword) {
+            const adminLogin = await request("POST", "/api/auth/login", {
+              username: adminUsername,
+              password: adminPassword
+            });
+            if (adminLogin.status === 200 && adminLogin.data?.access_token) {
+              const adminUsers = await request("GET", "/api/admin/users", undefined, {
+                Authorization: `Bearer ${adminLogin.data.access_token}`
+              });
+              report(
+                "10. GET /api/admin/users (admin success)",
+                adminUsers.status === 200 && Array.isArray(adminUsers.data),
+                adminUsers
+              );
+            } else {
+              report("10. GET /api/admin/users (admin login)", false, adminLogin);
+            }
+          }
+        } catch (error) {
+          report("Test sequence", false, error.message);
+        } finally {
+          document.querySelector("#run").disabled = false;
+        }
+      }
+
+      document.querySelector("#run").addEventListener("click", runTests);
+      document.querySelector("#clear").addEventListener("click", () => results.replaceChildren());
+    </script>
+  </body>
+</html>
