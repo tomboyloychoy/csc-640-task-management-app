@@ -5,7 +5,7 @@ import bcrypt
 import jwt
 from fastapi.testclient import TestClient
 
-from app.main import create_app
+from code.app.main import create_app
 
 
 def test_api_docs_include_json_request_examples(tmp_path):
@@ -32,6 +32,15 @@ def test_docs_page_uses_read_only_swagger_ui(tmp_path):
     assert "supportedSubmitMethods" in response.text
     assert "[]" in response.text
     assert ".authorization__btn" in response.text
+
+
+def test_browser_test_page_is_available(tmp_path):
+    with TestClient(create_app(tmp_path / "test-page.db")) as client:
+        response = client.get("/test-page")
+
+    assert response.status_code == 200
+    assert "Tamana API Browser Test" in response.text
+    assert "/api/admin/users" in response.text
 
 
 def test_legacy_database_migrates_user_id_and_preserves_tasks(tmp_path):

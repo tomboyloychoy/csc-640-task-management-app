@@ -56,7 +56,7 @@ python -m pytest -q tests
 - Record command, commit/revision, database setup, expected vs. actual status/body, and pass/fail counts.
 - A stage passes only when every required case is implemented and passes.
 - Do not weaken assertions to hide a failure.
-- The current test suite is not yet a complete executable implementation of all cases in this acceptance plan.
+- `tests/test_acceptance.py` exercises the cases in this plan against Stage 1. Stage 2 parity remains unverified until a Stage 2 implementation is available.
 
 ---
 
@@ -183,11 +183,14 @@ python -m pytest -q tests
 
 ## Results record
 
-Record revision, exact command, test database setup, expected vs. actual status/body, and pass/fail counts for each stage.
+- **Command:** `python -m pytest -q tests`
+- **Database setup:** Each test creates a fresh SQLite database under pytest's temporary directory; no production database is used.
+- **Expected responses:** The status codes and body/content assertions in cases 1-10 above.
+- **Pass criteria:** Every assertion passes; any failed status, response body, ownership, or persistence check fails the run.
 
 | Stage | Expected | Actual |
 |---|---|---|
-| Stage 1 — FastAPI + SQLite | Every planned case passes. | Not recorded for the complete planned-feature contract. |
-| Stage 2 — SQLAlchemy/Pydantic | Every case passes with the same requests and expected feature responses as Stage 1. | Not run. |
+| Stage 1 — FastAPI + SQLite | All cases 1-10 pass with the expected status codes, response bodies, authorization behavior, and persisted state; 0 failures. | **PASS** — `19 passed, 0 failed` using the command and isolated database setup above. One Starlette/httpx deprecation warning was emitted. |
+| Stage 2 — SQLAlchemy/Pydantic | Every case passes with the same requests and expected feature responses as Stage 1. | **NOT RUN** — no Stage 2 implementation is available in this repository; parity is unverified. |
 
 **A failure must be fixed in the implementation. Never weaken or remove an acceptance assertion to make a run pass.**
