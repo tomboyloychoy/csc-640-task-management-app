@@ -176,3 +176,7 @@ Copy the output into `.env` as the value of `TAMANA_SECRET_KEY`. Keep it private
 | 10 | `GET` | `/api/admin/users` | Present; Stage 1 acceptance cases tested | `AdminBearer` |
 
 The static GitHub Pages demo continues to use browser-local storage and does not run the FastAPI backend. Run `python -m pytest -q tests` to execute the API acceptance and regression tests.
+
+## AI assistance disclosure
+
+OpenAI **GPT-6 Luna**, accessed through the **Copilot SDK in VS Code**, assisted with implementation and documentation work for this project. Assistance included code-change support and drafting or revising the README, API documentation, test documentation, and project presentation. I reviewed the resulting work and ran the test suite; I remain responsible for the submitted implementation and can explain its behavior and tests.
