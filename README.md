@@ -1,5 +1,7 @@
 # Tamana
 
+Tamana is a task-management app with a Python, FastAPI, and SQLite backend and a static GitHub Pages demo. The local API uses direct, parameterized SQL; the Pages demo stores tasks in the visitor's browser.
+
 ## Project stage
 
 The project goal is to demonstrate the difference between a **minimum, low-level implementation** and a **higher-level software engineering implementation**.
@@ -8,8 +10,9 @@ This repository contains **Stage 1**, the low-level baseline. It uses FastAPI, S
 
 **Stage 2 is proposed, not implemented.** It is expected to raise the level of engineering by adding abstractions and practices such as SQLAlchemy for persistence, Pydantic for request/response schemas and validation, and a more explicit specification workflow. Stage 2 will be compared with this Stage 1 baseline rather than weakening or replacing it silently.
 
-Tamana is a task-management app with a Python, FastAPI, and SQLite backend and a static GitHub Pages demo. The local API uses direct, parameterized SQL; the Pages demo stores tasks in the visitor's browser.
+## Branch workflow
 
+The project uses three main development branches: `main`, `stage-1`, and `stage-2`. Stage 1 development is complete and is currently represented on `main`. Stage 2 work will be developed on `stage-2`; when that development and its verification are complete, it will be merged into `main`. The `stage-1` branch preserves the Stage 1 baseline for reference and comparison.
 ## Features
 
 - Create, edit, complete, and delete tasks
